@@ -1,0 +1,21 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+require "bundler/setup"
+require "optparse"
+require_relative "../lib/campfire/importer"
+options = {}
+OptionParser.new do |parser|
+  parser.banner = "Usage: bundle exec ruby bin/import-rails --source BACKUP.sqlite3 --destination NEW.sqlite3 [--storage RAILS_STORAGE] [--files DEST_FILES]"
+  parser.on("--source PATH") { |v| options[:source] = v }
+  parser.on("--destination PATH") { |v| options[:destination] = v }
+  parser.on("--storage PATH") { |v| options[:storage] = v }
+  parser.on("--files PATH") { |v| options[:files] = v }
+end.parse!
+abort "--source and --destination are required" unless options[:source] && options[:destination]
+abort "Source does not exist" unless File.file?(options[:source])
+abort "Destination already exists; use a new path" if File.exist?(options[:destination])
+db = Campfire::Database.connect(path: options[:destination])
+Campfire::Database.migrate(db)
+container = Campfire::Container.new(db: db, upload_root: options[:files] || File.join(File.dirname(options[:destination]), "files"))
+puts JSON.pretty_generate(Campfire::Importer.new(source: options[:source], target: container, rails_storage: options[:storage]).run)
+db.disconnect

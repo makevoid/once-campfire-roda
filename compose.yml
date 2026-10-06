@@ -1,0 +1,35 @@
+services:
+  web:
+    build: .
+    image: campfire-roda:local
+    environment: &app_environment
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET to at least 64 random bytes}
+      RACK_ENV: production
+      HOST: 0.0.0.0
+      DATABASE_PATH: /app/storage/campfire.sqlite3
+      UPLOAD_ROOT: /app/storage/files
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
+    ports:
+      - "127.0.0.1:9292:9292"
+    volumes:
+      - campfire:/app/storage
+    healthcheck:
+      test: ["CMD", "bundle", "exec", "ruby", "-rnet/http", "-e", "exit(Net::HTTP.get_response(URI('http://127.0.0.1:9292/up')).code == '200' ? 0 : 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+  worker:
+    image: campfire-roda:local
+    command: ["bundle", "exec", "ruby", "bin/worker"]
+    environment: *app_environment
+    volumes:
+      - campfire:/app/storage
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  campfire:

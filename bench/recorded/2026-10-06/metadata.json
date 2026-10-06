@@ -1,0 +1,77 @@
+{
+  "yjit": true,
+  "puma_threads": 5,
+  "puma_workers": 0,
+  "hardware": {
+    "cpu": "Apple M4",
+    "physical_cpus": 10,
+    "memory_bytes": 17179869184
+  },
+  "roda_runtime_sha256": "7141b6f959626932a5195fd89ac1b4e2f2878cd9390c0b772f515f2bd935745a",
+  "roda_runtime_files": [
+    "Gemfile",
+    "Gemfile.lock",
+    "app.rb",
+    "config.ru",
+    "config/puma.rb",
+    "db/migrations/001_campfire.rb",
+    "db/migrations/002_delivery.rb",
+    "lib/campfire.rb",
+    "lib/campfire/authentication.rb",
+    "lib/campfire/database.rb",
+    "lib/campfire/delivery.rb",
+    "lib/campfire/domain.rb",
+    "lib/campfire/importer.rb",
+    "lib/campfire/renderer.rb",
+    "lib/campfire/repository.rb",
+    "lib/campfire/request_limit.rb",
+    "lib/campfire/routes/account.rb",
+    "lib/campfire/routes/messages.rb",
+    "lib/campfire/routes/rooms.rb",
+    "lib/campfire/routes/support.rb",
+    "lib/campfire/routes/users.rb",
+    "lib/campfire/service.rb",
+    "lib/campfire/uploads.rb",
+    "public/app.css",
+    "public/app.js",
+    "public/service-worker.js",
+    "views/form.erb",
+    "views/layout.erb",
+    "views/room.erb",
+    "views/search.erb"
+  ],
+  "rails_ref": "d2155e85a01b8439c32a3604ebb7f39fea1ace0f",
+  "fixture": {
+    "fixture": "campfire-roda-benchmark-v1",
+    "rooms.watercooler": 1,
+    "messages.busy_060": 1960,
+    "messages.count": 2000,
+    "users.count": 100
+  },
+  "note": "Loopback only. Both apps use the same Ruby with YJIT; Rails keeps production Redis caching. No CPU affinity on macOS. Vips preloaded to fix source initializer load order.",
+  "recorded_at_utc": "2026-10-06T01:10:25Z",
+  "audit_run_utc": "2026-10-06T01:10:06Z",
+  "load_run_id": "rails-vs-roda-20261006-011025",
+  "benchmark": {
+    "duration_seconds": 5,
+    "warmup_seconds": 3,
+    "initial_prewarm_seconds": 5,
+    "rounds": 4,
+    "concurrencies": [
+      1,
+      16
+    ]
+  },
+  "versions": {
+    "rails": "8.2.0.alpha",
+    "rails_revision": "1a02651ac37f",
+    "roda": "3.108.0",
+    "sequel": "5.109.0",
+    "sqlite3": "2.9.6",
+    "rack": "3.2.7",
+    "puma": "7.2.1",
+    "redis": "8.6.2"
+  },
+  "orchestrator_ruby": "ruby 4.0.2 (2026-03-17 revision d3da9fec82) +PRISM [arm64-darwin25]",
+  "servers_and_client_ruby": "ruby 4.0.2 (2026-03-17 revision d3da9fec82) +YJIT +PRISM [arm64-darwin25]"
+}

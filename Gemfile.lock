@@ -1,0 +1,120 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    base64 (0.3.0)
+    bcrypt (3.1.22)
+    bigdecimal (4.1.3)
+    jwt (3.3.0)
+      base64
+    minitest (5.27.0)
+    net-http (0.9.1)
+      uri (>= 0.11.1)
+    nio4r (2.7.5)
+    nokogiri (1.19.4-aarch64-linux-gnu)
+      racc (~> 1.4)
+    nokogiri (1.19.4-aarch64-linux-musl)
+      racc (~> 1.4)
+    nokogiri (1.19.4-arm-linux-gnu)
+      racc (~> 1.4)
+    nokogiri (1.19.4-arm-linux-musl)
+      racc (~> 1.4)
+    nokogiri (1.19.4-arm64-darwin)
+      racc (~> 1.4)
+    nokogiri (1.19.4-x86_64-darwin)
+      racc (~> 1.4)
+    nokogiri (1.19.4-x86_64-linux-gnu)
+      racc (~> 1.4)
+    nokogiri (1.19.4-x86_64-linux-musl)
+      racc (~> 1.4)
+    openssl (4.0.2)
+    puma (7.2.1)
+      nio4r (~> 2.0)
+    racc (1.8.1)
+    rack (3.2.7)
+    rack-test (2.2.0)
+      rack (>= 1.3)
+    rackup (2.3.1)
+      rack (>= 3)
+    rake (13.4.2)
+    roda (3.108.0)
+      rack
+    sequel (5.109.0)
+      bigdecimal
+    sqlite3 (2.9.6-aarch64-linux-gnu)
+    sqlite3 (2.9.6-aarch64-linux-musl)
+    sqlite3 (2.9.6-arm-linux-gnu)
+    sqlite3 (2.9.6-arm-linux-musl)
+    sqlite3 (2.9.6-arm64-darwin)
+    sqlite3 (2.9.6-x86_64-darwin)
+    sqlite3 (2.9.6-x86_64-linux-gnu)
+    sqlite3 (2.9.6-x86_64-linux-musl)
+    uri (1.1.1)
+    web-push (3.1.0)
+      jwt (~> 3.0)
+      openssl (>= 3.0)
+
+PLATFORMS
+  aarch64-linux
+  aarch64-linux-gnu
+  aarch64-linux-musl
+  arm-linux-gnu
+  arm-linux-musl
+  arm64-darwin
+  x86_64-darwin
+  x86_64-linux
+  x86_64-linux-gnu
+  x86_64-linux-musl
+
+DEPENDENCIES
+  bcrypt (~> 3.1)
+  minitest (~> 5.27)
+  net-http (~> 0.9)
+  nokogiri (~> 1.19)
+  puma (~> 7.2)
+  rack-test (~> 2.2)
+  rackup (~> 2.3)
+  rake (~> 13.4)
+  roda (~> 3.108)
+  sequel (~> 5.108)
+  sqlite3 (~> 2.9)
+  web-push (~> 3.0)
+
+CHECKSUMS
+  base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b
+  bcrypt (3.1.22) sha256=1f0072e88c2d705d94aff7f2c5cb02eb3f1ec4b8368671e19112527489f29032
+  bigdecimal (4.1.3) sha256=61ebe1e5e559bdc3cc6f2c0ee7f427321fc838f59611c294356eb04d6e21cf66
+  bundler (4.0.20) sha256=7978a8ac648767f5e635bc522445b79e80a52b907a39a36c2d8085ed6bc762ae
+  jwt (3.3.0) sha256=44cc34fbc341c148233cf66641522b4bce0dfb1ce55e8073f05c56f44f4ee546
+  minitest (5.27.0) sha256=2d3b17f8a36fe7801c1adcffdbc38233b938eb0b4966e97a6739055a45fa77d5
+  net-http (0.9.1) sha256=25ba0b67c63e89df626ed8fac771d0ad24ad151a858af2cc8e6a716ca4336996
+  nio4r (2.7.5) sha256=6c90168e48fb5f8e768419c93abb94ba2b892a1d0602cb06eef16d8b7df1dca1
+  nokogiri (1.19.4-aarch64-linux-gnu) sha256=1269fb644a6de405057a53dd5c762b1209b43ca7424f839454d3dbc677c31a8f
+  nokogiri (1.19.4-aarch64-linux-musl) sha256=35c65b9ce72b3bb03207bdbe7067915019dc18c1b9b59139684bd6690fdd01af
+  nokogiri (1.19.4-arm-linux-gnu) sha256=a301313e38bb065d68239e79734bcd6f56fb6efaacebde29e9abf2a4735340ca
+  nokogiri (1.19.4-arm-linux-musl) sha256=588923c101bcfa78869734d247d25b598674323e7f22474fc468f6e5647311eb
+  nokogiri (1.19.4-arm64-darwin) sha256=a46db9853286e6597b36ebc6953817d15acf3a299583eb3f89fdc6f91dd63527
+  nokogiri (1.19.4-x86_64-darwin) sha256=7fd17057d3e1f00e9954a74b3cd76595d3d4a5ef233b7ed9599047c204f70551
+  nokogiri (1.19.4-x86_64-linux-gnu) sha256=379fae440b28915e3f19d752ce2dcf8465ed2b2fbefd2a7ca0dd497bc981a06a
+  nokogiri (1.19.4-x86_64-linux-musl) sha256=17dfb7c1fa194ae02fbf7c51a7afc8d278045ab3fdacfd86f91d02d7b274470b
+  openssl (4.0.2) sha256=1037ad2868ae58df9ad917891c0c0f9815a1172f6846d4bcdd508e4c2ee747c2
+  puma (7.2.1) sha256=d7bf0e9cabd532e0d401e142cd94e3ac531e993610e2d80e6fbf9c26961414b0
+  racc (1.8.1) sha256=4a7f6929691dbec8b5209a0b373bc2614882b55fc5d2e447a21aaa691303d62f
+  rack (3.2.7) sha256=93e13e1c24f93556671d85d2d79fa228c3485815c50d7e2f265b5330c6528fb7
+  rack-test (2.2.0) sha256=005a36692c306ac0b4a9350355ee080fd09ddef1148a5f8b2ac636c720f5c463
+  rackup (2.3.1) sha256=6c79c26753778e90983761d677a48937ee3192b3ffef6bc963c0950f94688868
+  rake (13.4.2) sha256=cb825b2bd5f1f8e91ca37bddb4b9aaf345551b4731da62949be002fa89283701
+  roda (3.108.0) sha256=a209acc5c885c7c9cfe703ad985b343026f79f67949932dd739b83e5a129ffbd
+  sequel (5.109.0) sha256=e0d1d474442d620c8497d7f4851c0cc3a277920519051b8014b2877aa55efffe
+  sqlite3 (2.9.6-aarch64-linux-gnu) sha256=d8b1f7d23efd7abac285775a9566562fc7debfef79d594e3a20354406fb7907c
+  sqlite3 (2.9.6-aarch64-linux-musl) sha256=3579e1c98cdc7ff5c3722847bb63ed4e1efb7ff675cb5e1e48ef2d4da5fb3bc9
+  sqlite3 (2.9.6-arm-linux-gnu) sha256=33541500e3615da02afe54a9cc38b17a6985d3cf9d8b76d6d0a83002f114e7ec
+  sqlite3 (2.9.6-arm-linux-musl) sha256=c5490af48bb228fefa54314e9541375c3907e70f8109f3881b5ff97e1c93ae33
+  sqlite3 (2.9.6-arm64-darwin) sha256=849b5d7f795e60fe25076d62c72dd722beb45b3850b516ad978d60ee848ec15b
+  sqlite3 (2.9.6-x86_64-darwin) sha256=b5842fea77781c14da03fa7bc0feb82db03a69e135affcb6f5399cbd2797a5f3
+  sqlite3 (2.9.6-x86_64-linux-gnu) sha256=613188ce02f614126ddbc38c5e217ccffd6306d0dcd9adca9764547aa890a634
+  sqlite3 (2.9.6-x86_64-linux-musl) sha256=d493b11818a3573387a1d56e1ee8fa00da23a683a7a1cc063e7a0feeed843abf
+  uri (1.1.1) sha256=379fa58d27ffb1387eaada68c749d1426738bd0f654d812fcc07e7568f5c57c6
+  web-push (3.1.0) sha256=501ab00340c58fb70dabda59f28a86b3cccb0930c6f1f30721b2a5b24de7187d
+
+BUNDLED WITH
+  4.0.20

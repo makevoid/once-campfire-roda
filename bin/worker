@@ -1,0 +1,15 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+require "bundler/setup"
+require_relative "../lib/campfire"
+db = Campfire::Database.connect
+Campfire::Database.migrate(db)
+container = Campfire::Container.new(db: db)
+delivery = Campfire::Delivery.new(container)
+running = true
+Signal.trap("TERM") { running = false }
+Signal.trap("INT") { running = false }
+while running
+  sleep 0.5 unless delivery.work_once
+end
+db.disconnect
