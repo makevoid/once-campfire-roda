@@ -1,0 +1,17 @@
+<% key = message[:client_message_id] %>
+<turbo-frame id="boosting_message_<%= key %>">
+  <div class="boosts flex flex-wrap align-center gap full-width" style="--column-gap: 0.4ch; --row-gap: 0"
+      data-controller="turbo-streaming" data-action="turbo:submit-start->turbo-streaming#unsubscribe">
+    <div class="flex-inline flex-wrap gap" id="boosts_message_<%= key %>" data-turbo-streaming-target="container">
+      <%= render partial: "messages/boosts/boost", collection: message.boosts.ordered %>
+    </div>
+    <turbo-frame id="new_boost_message_<%= key %>">
+      <div class="flex-inline message__boost-inline" data-controller="soft-keyboard">
+        <a href="/messages/<%= message.id %>/boosts/new" class="boost__action txt-small btn" data-action="soft-keyboard#open">
+          <img src="<%= asset_path('boost.svg') %>" width="20" height="20" aria-hidden="true">
+          <span class="for-screen-reader">Add a boost</span>
+        </a>
+      </div>
+    </turbo-frame>
+  </div>
+</turbo-frame>

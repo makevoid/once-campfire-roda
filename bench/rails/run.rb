@@ -25,6 +25,8 @@ $stdout.sync = true
 %w[app bin config db lib public Gemfile Gemfile.lock Rakefile config.ru].each do |entry|
   FileUtils.cp_r(File.join(SOURCE, entry), runtime)
 end
+FileUtils.mkdir_p(File.join(runtime, "vendor"))
+FileUtils.cp_r(File.join(SOURCE, "vendor/javascript"), File.join(runtime, "vendor/javascript"))
 FileUtils.mkdir_p([File.join(runtime, "storage/db"), File.join(runtime, "storage/files"), File.join(runtime, "tmp/pids"), File.join(runtime, "log")])
 # The source initializer calls Vips.block_untrusted without loading ruby-vips first.
 # Load the installed library; retain all of the source's operation restrictions.

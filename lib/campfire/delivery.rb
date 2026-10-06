@@ -6,6 +6,8 @@ require "ipaddr"
 require "resolv"
 require "timeout"
 require "web_push"
+require "tempfile"
+require "rack/mime"
 
 module Campfire
   class OutboundHTTP
@@ -66,6 +68,7 @@ module Campfire
 
   class PushRequest < WebPush::Request
     def perform
+      PushPolicy.validate!(uri.to_s, resolve: false)
       response = OutboundHTTP.new.post(uri.to_s, headers: headers, body: body)
       verify_response(response)
     end
@@ -118,6 +121,7 @@ module Campfire
         when "fanout" then fanout(payload.fetch("message_id"))
         when "webhook" then webhook(payload.fetch("message_id"), payload.fetch("user_id"))
         when "push" then push(payload.fetch("message_id"), payload.fetch("subscription_id"))
+        when "push_test" then push_test(payload.fetch("subscription_id"))
         else raise Error, "Unknown job kind"
         end
         @queue.finish(job)
@@ -158,15 +162,25 @@ module Campfire
       sender = @db[:users][id: message[:creator_id]]
       payload = {user: {id: sender[:id], name: sender[:name]},
         room: {id: room[:id], name: room[:name], path: "/rooms/#{room[:id]}/#{user_id}-#{recipient[:bot_token]}/messages"},
-        message: {id: message_id, body: {html: message[:body], plain: message[:plain_text]}, path: "/rooms/#{room[:id]}/@#{message_id}"}}
+        message: {id: message_id, body: {html: message[:body], plain: message[:plain_text].gsub("@#{recipient[:name]}", "").gsub(/\A\p{Space}+|\p{Space}+\z/, "")}, path: "/rooms/#{room[:id]}/@#{message_id}"}}
       # Like Rails Campfire, only administrators set bot URLs and may target
       # internal services. This exception never applies to push subscriptions.
-      response = @http.post(hook[:url], headers: {"Content-Type" => "application/json"}, body: JSON.generate(payload), allow_private: true)
-      raise Error, "Webhook delivery failed" unless (200..299).cover?(response.code.to_i)
-      if response.code == "200" && %w[text/plain text/html].include?(response.content_type) && !response.body.to_s.strip.empty?
-        body = response.content_type == "text/plain" ? CGI.escapeHTML(response.body).gsub("\n", "<br>") : response.body
-        @service.post_message(User.new(recipient), room[:id], {"body" => body, "client_message_id" => "webhook-#{user_id}-#{message_id}"})
+      response = @http.post(hook[:url], headers: {"Content-Type" => "application/json"}, body: JSON.generate(payload), allow_private: true, max_bytes: Uploads::MAX_SIZE)
+      return unless response.code == "200" && !response.body.to_s.empty?
+      attributes = {"client_message_id" => "webhook-#{user_id}-#{message_id}"}
+      if %w[text/plain text/html].include?(response.content_type)
+        body = response.body.dup.force_encoding(Encoding::UTF_8)
+        @service.post_message(User.new(recipient), room[:id], attributes.merge("body" => body))
+      elsif extension = Rack::Mime::MIME_TYPES.key(response.content_type)
+        Tempfile.create(["campfire-bot-", extension]) do |file|
+          file.binmode
+          file.write(response.body)
+          file.flush
+          @service.post_message(User.new(recipient), room[:id], attributes.merge("attachment" => {tempfile: file, filename: "attachment#{extension}"}))
+        end
       end
+    rescue Net::OpenTimeout, Net::ReadTimeout, Timeout::Error
+      @service.post_message(User.new(recipient), room[:id], {"body" => "Failed to respond within 7 seconds", "client_message_id" => "webhook-#{user_id}-#{message_id}"}) if recipient && room
     end
 
     def push(message_id, subscription_id)
@@ -177,12 +191,26 @@ module Campfire
       recipient = recipients(message).find { |user| user[:id] == subscription[:user_id] }
       return unless recipient && eligible_push?(recipient, mentioned?(message, recipient))
       sender = @db[:users][id: message[:creator_id]]
-      @push_class.new(message: JSON.generate(title: sender[:name], options: {body: message[:plain_text][0, 240],
-        tag: "room-#{message[:room_id]}", data: {path: "/rooms/#{message[:room_id]}/@#{message_id}"}}),
+      room = @db[:rooms][id: message[:room_id]]
+      direct = room[:type] == "Rooms::Direct"
+      deliver_push(subscription, title: direct ? sender[:name] : room[:name],
+        body: direct ? message[:plain_text] : "#{sender[:name]}: #{message[:plain_text]}", path: "/rooms/#{room[:id]}")
+    end
+
+    def push_test(subscription_id)
+      subscription = @db[:push_subscriptions][id: subscription_id]
+      return unless subscription && @db[:users][id: subscription[:user_id], status: 0]
+      deliver_push(subscription, title: "Campfire Test", body: SecureRandom.uuid, path: "/users/me/push_subscriptions")
+    end
+
+    def deliver_push(subscription, title:, body:, path:)
+      return if ENV["VAPID_PRIVATE_KEY"].to_s.empty? || ENV["VAPID_PUBLIC_KEY"].to_s.empty?
+      badge = @db[:memberships].where(user_id: subscription[:user_id]).exclude(unread_at: nil).count
+      @push_class.new(message: JSON.generate(title: title, options: {body: body, icon: "/account/logo", data: {path: path, badge: badge}}),
         subscription: {endpoint: subscription[:endpoint], keys: {p256dh: subscription[:p256dh_key], auth: subscription[:auth_key]}},
-        vapid: {subject: ENV.fetch("VAPID_SUBJECT", "mailto:admin@example.com"), public_key: ENV["VAPID_PUBLIC_KEY"], private_key: ENV["VAPID_PRIVATE_KEY"]}).perform
+        vapid: {subject: ENV.fetch("VAPID_SUBJECT", "mailto:admin@example.com"), public_key: ENV["VAPID_PUBLIC_KEY"], private_key: ENV["VAPID_PRIVATE_KEY"]}, urgency: "high").perform
     rescue WebPush::ExpiredSubscription, WebPush::InvalidSubscription
-      @db[:push_subscriptions].where(id: subscription_id).delete
+      @db[:push_subscriptions].where(id: subscription[:id]).delete
     end
 
     private
@@ -194,7 +222,7 @@ module Campfire
     end
 
     def mentioned?(message, user)
-      /(?:\A|\s)@#{Regexp.escape(user[:name])}(?=\s|[.,!?:;]|\z)/i.match?(message[:plain_text])
+      @service.mentioned_user_ids(message[:body]).include?(user[:id])
     end
 
     def eligible_push?(user, mention)

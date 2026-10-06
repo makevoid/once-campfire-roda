@@ -17,7 +17,7 @@ class CampfireTest < Minitest::Test
     @directory = Dir.mktmpdir("campfire-test-")
     @db = Campfire::Database.connect(path: ":memory:")
     Campfire::Database.migrate(db)
-    @container = Campfire::Container.new(db: db, upload_root: File.join(@directory, "files"))
+    @container = Campfire::Container.new(db: db, upload_root: File.join(@directory, "files"), push_resolver: ->(*) { ["8.8.8.8"] })
     @service, @repo = container.service, container.repo
     now = Time.now.utc
     db[:accounts].insert(name: "Test Campfire", join_code: "invite", settings: "{}", created_at: now, updated_at: now)
@@ -60,5 +60,10 @@ class CampfireTest < Minitest::Test
 
   def post_message(user = admin, target = room, text = "Coffee is ready", **extra)
     service.post_message(user, target.id, {"body" => text}.merge(extra.transform_keys(&:to_s)))
+  end
+
+  def mention(user)
+    token = container.tokens.generate(user.id, purpose: :mention)
+    %(<action-text-attachment sgid="#{token}" content-type="application/vnd.campfire.mention"></action-text-attachment>)
   end
 end

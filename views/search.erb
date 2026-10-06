@@ -1,5 +1,0 @@
-<section class="search-page"><h1>Search conversations</h1>
-<form action="/searches" method="post" class="search-form"><input type="hidden" name="authenticity_token" value="<%= view.h(csrf) %>"><label class="sr-only" for="query">Search</label><input id="query" type="search" name="q" value="<%= view.h(query) %>" placeholder="Find a message" maxlength="500"><button class="primary">Search</button></form>
-<div class="recent"><% recent.each do |item| %><a href="/searches?q=<%= view.h(CGI.escape(item[:query])) %>"><%= view.h(item[:query]) %></a><% end %></div>
-<% unless recent.empty? %><form method="post" action="/searches/clear"><input type="hidden" name="authenticity_token" value="<%= view.h(csrf) %>"><input type="hidden" name="_method" value="delete"><button>Clear history</button></form><% end %>
-<div class="messages"><%= view.messages(page, user: user) %><% if page.empty? %><p class="empty"><%= query.to_s.empty? ? 'Search the rooms you belong to.' : 'No matching messages.' %></p><% end %></div></section>

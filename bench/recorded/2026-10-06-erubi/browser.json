@@ -1,0 +1,18 @@
+{
+  "status": "passed",
+  "browser": "154.0.8037.98",
+  "checks": [
+    "messages rendered",
+    "Lexxy initialized",
+    "composer creates one persisted message",
+    "quick boost updates Turbo frame",
+    "Unicode reaction preserved",
+    "edit saves and closes frame",
+    "search finds posted message",
+    "profile form loads",
+    "mobile viewport has no horizontal overflow",
+    "message cleanup",
+    "browser errors: "
+  ],
+  "errors": []
+}

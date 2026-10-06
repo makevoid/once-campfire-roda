@@ -7,6 +7,18 @@ module Campfire
     SESSION_TTL = 30 * 86_400
     DUMMY_DIGEST = BCrypt::Password.create(SecureRandom.hex(32), cost: 12).to_s.freeze
 
+    def self.session_secret
+      return ENV.fetch("SESSION_SECRET") if ENV["SESSION_SECRET"]
+      raise "Set SESSION_SECRET to at least 64 random bytes in production" if ENV["RACK_ENV"] == "production"
+      path = File.expand_path("../../storage/session-secret", __dir__)
+      FileUtils.mkdir_p(File.dirname(path))
+      begin
+        File.write(path, SecureRandom.hex(64), mode: File::WRONLY | File::CREAT | File::EXCL, perm: 0o600)
+      rescue Errno::EEXIST
+      end
+      File.read(path)
+    end
+
     def initialize(db)
       @db = db
     end

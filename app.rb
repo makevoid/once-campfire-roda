@@ -10,6 +10,8 @@ require_relative "lib/campfire/routes/messages"
 require_relative "lib/campfire/routes/rooms"
 require_relative "lib/campfire/routes/users"
 require_relative "lib/campfire/routes/account"
+require_relative "lib/campfire/routes/media"
+require_relative "lib/campfire/routes/frontend"
 
 module Campfire
   class App < Roda
@@ -18,21 +20,10 @@ module Campfire
     include Routes::Rooms
     include Routes::Users
     include Routes::Account
+    include Routes::Media
+    include Routes::Frontend
 
-    SECRET = if ENV["SESSION_SECRET"]
-      ENV.fetch("SESSION_SECRET")
-    elsif ENV["RACK_ENV"] == "production"
-      raise "Set SESSION_SECRET to at least 64 random bytes in production"
-    else
-      path = File.expand_path("storage/session-secret", __dir__)
-      FileUtils.mkdir_p(File.dirname(path))
-      begin
-        File.write(path, SecureRandom.hex(64), mode: File::WRONLY | File::CREAT | File::EXCL, perm: 0o600)
-      rescue Errno::EEXIST
-        # Shared by local server processes and retained across restarts.
-      end
-      File.read(path)
-    end.freeze
+    SECRET = Authentication.session_secret.freeze
 
     use RequestLimit
     use Rack::MethodOverride
@@ -40,6 +31,7 @@ module Campfire
     plugin :head
     plugin :halt
     plugin :json
+    plugin :type_routing, exclude: [:xml], types: {turbo_stream: "text/vnd.turbo-stream.html"}
     plugin :json_parser, content_type_regexp: /\Aapplication\/json\b/i
     plugin :public, root: File.expand_path("public", __dir__)
     plugin :sessions, secret: SECRET, key: "session_token", max_seconds: Authentication::SESSION_TTL,
@@ -53,7 +45,7 @@ module Campfire
       when Error
         response.status = error.status
         response["content-type"] = "text/html; charset=utf-8"
-        %(<section class="panel"><h1>#{renderer.h(error.message)}</h1><a href="/">Back to Campfire</a></section>)
+        %(<section class="panel"><h1>#{CGI.escapeHTML(error.message)}</h1><a href="/">Back to Campfire</a></section>)
       when Sequel::UniqueConstraintViolation
         response.status = 409
         "That email address or record already exists."
@@ -71,13 +63,16 @@ module Campfire
     end
 
     route do |r|
+      response["content-type"] = "text/html; charset=utf-8"
       response["x-content-type-options"] = "nosniff"
       response["referrer-policy"] = "same-origin"
       response["x-frame-options"] = "DENY"
-      response["content-security-policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+      @nonce = SecureRandom.base64(18)
+      response["content-security-policy"] = "default-src 'self'; script-src 'self' 'nonce-#{@nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
       response["cache-control"] = "private, no-store"
       r.get("up") { "OK" }
-      r.public if %w[/app.css /app.js /service-worker.js].include?(r.path)
+      r.get("service-worker") { send_local_file(File.expand_path("public/service-worker.js", __dir__), "text/javascript", cache: "no-cache") }
+      r.public if r.path == "/service-worker.js" || r.path.start_with?("/assets/")
       if !r.get? && !r.head?
         raise Error.new("Request too large", 413) if r.content_length.to_i > Uploads::MAX_SIZE + 1_048_576
         raise Error.new("Too many requests", 429) if db[:bans].where(ip_address: r.ip).any?
@@ -94,11 +89,14 @@ module Campfire
       end
 
       check_csrf!
+      r.get("account", "logo") { logo }
+      r.get("qr_code", String) { |value| qr_code(value) }
       r.on "first_run" do
         r.redirect "/" if repo.account
         r.get(true) { auth_form("Set up Campfire", "/first_run", registration: true) }
         r.post(true) do
-          login(service.setup(attributes("user")))
+          user = register_user { service.setup(attributes("user")) }
+          login(user)
           r.redirect "/"
         end
       end
@@ -107,39 +105,56 @@ module Campfire
         raise Error.new("Invalid invitation", 404) unless repo.account&.fetch(:join_code) == code
         r.get(true) { auth_form("Join Campfire", "/join/#{code}", registration: true) }
         r.post(true) do
-          login(service.join(code, attributes("user")))
+          user = register_user { service.join(code, attributes("user")) }
+          login(user)
           r.redirect "/"
         end
       end
 
       r.on "session" do
+        r.on("transfers", String) { |token| session_transfer(r, token) }
         r.get "new" do
           r.redirect "/first_run" unless repo.account
           auth_form("Welcome back", "/session")
         end
         r.post(true) do
+          return_to = session["return_to"] || "/"
           login(auth.authenticate(r.params["email_address"], r.params["password"], ip: r.ip))
-          r.redirect "/"
+          r.redirect return_to
+        rescue Error => error
+          raise unless [401, 429].include?(error.status)
+          response.status = error.status
+          ui(flash: {alert: "Too many requests or unauthorized."}).page("sessions/new")
         end
         r.delete(true) do
+          if person = auth.resume(session["token"])
+            db[:push_subscriptions].where(user_id: person.id, endpoint: r.params["push_subscription_endpoint"]).delete if r.params["push_subscription_endpoint"]
+          end
           auth.terminate(session["token"])
           session.clear
           r.redirect "/session/new"
         end
       end
 
-      r.get "webmanifest" do
-        {name: "Campfire", short_name: "Campfire", start_url: "/", display: "standalone", theme_color: "#242d35", background_color: "#faf9f6"}
-      end
+      r.get("webmanifest") { webmanifest }
       @user = auth.resume(session["token"])
+      r.get "cable" do
+        raise Error.new("Sign in required", 401) unless @user
+        raise Error.new("Invalid WebSocket origin", 403) unless r.env["HTTP_ORIGIN"] == r.base_url
+        raise Error.new("WebSocket upgrade required", 426) unless WebSocket::Driver.websocket?(r.env) && r.env["rack.hijack"]
+        Realtime::Socket.new(container, r, session["token"], csrf_token)
+        r.halt [-1, {}, []]
+      end
       unless @user
+        session["return_to"] = r.fullpath if r.get? && r.fullpath.start_with?("/") && !r.fullpath.start_with?("//")
         r.redirect(repo.account ? "/session/new" : "/first_run")
       end
 
       r.root do
-        room_id = db[:memberships].where(user_id: @user.id).order(:id).get(:room_id)
+        memberships = db[:memberships].where(user_id: @user.id)
+        room_id = memberships.where(room_id: session["last_room_id"]).get(:room_id) || memberships.order(:id).get(:room_id)
         r.redirect "/rooms/#{room_id}" if room_id
-        full_page("Welcome", '<section class="panel"><h1>Welcome to Campfire</h1><p>You have no rooms yet.</p><a href="/rooms/opens/new">Create a room</a></section>')
+        ui.page("welcome/show")
       end
 
       r.on "rooms" do
@@ -155,16 +170,20 @@ module Campfire
           r.get("settings") { room_settings }
           r.on("messages") { message_routes(r) }
           r.on "involvement" do
-            r.get(true) { room_settings }
-            r.patch(true) { service.involvement(@user, id, r.params["involvement"]); r.redirect "/rooms/#{id}" }
+            r.get(true) do
+              view = ui
+              view.page("rooms/involvements/show", room: view.context.room(id), involvement: @room[:involvement])
+            end
+            r.is do
+              r.on(r.patch? || r.put?) do
+                service.involvement(@user, id, r.params["involvement"])
+                r.redirect "/rooms/#{id}/involvement"
+              end
+            end
           end
           r.post("heartbeat") { service.heartbeat(@user, id); r.halt 204 }
           r.get("events") { events }
-          r.get("refresh") do
-            since = Time.at(repo.integer(r.params.fetch("since", "0")) / 1000.0).utc
-            rows = db[:messages].where(room_id: id).where { updated_at > since }.order(:updated_at, :id).limit(80).all
-            json(renderer.json_messages(repo.present(rows)))
-          end
+          r.get("refresh") { refresh_room }
         end
       end
 
@@ -175,25 +194,30 @@ module Campfire
         message_detail_routes(r, id)
       end
 
+      r.on "users", String, "avatar" do |token|
+        r.get(true) { avatar(token) }
+        r.delete(true) { container.media.remove("User", @user.id, "avatar"); r.redirect "/users/me/profile" }
+      end
       r.on("users") { user_routes(r) }
       r.on("account") { account_routes(r) }
+      r.post("unfurl_link") do
+        data = OpenGraph.new.from_url(r.params["url"])
+        r.halt 204 unless data
+        json(data)
+      end
       r.on "autocompletable", "users" do
-        r.get(true) do
-          query = r.params["q"].to_s[0, 100]
-          rows = db[:users].where(status: 0).where(Sequel.ilike(:name, "%#{db.literal_like(query)}%"))
-            .order(:name).limit(20).select(:id, :name).all
-          json(rows)
-        end
+        r.get(true) { autocomplete_users }
       end
 
       r.on "searches" do
         r.get(true) do
           query = r.params["q"].to_s[0, 500]
           page = repo.search(@user, query)
-          json(renderer.json_messages(page)) if wants_json?
-          content = renderer.template("search", query: query, page: page, user: @user, csrf: csrf_token,
-            recent: db[:searches].where(user_id: @user.id).reverse_order(:updated_at).limit(10).all)
-          full_page("Search", content)
+          json(api_messages(page)) if wants_json?
+          view = ui(page: page)
+          view.page("searches/index", query: query.empty? ? nil : query.gsub(/[^[:word:]]/, " "), messages: view.context.page_messages(page),
+            recent_searches: db[:searches].where(user_id: @user.id).reverse_order(:updated_at).limit(10).all.map { |row| UI::Record.new(row) },
+            return_to_room: view.last_room_visited)
         end
         r.post(true) do
           service.record_search(@user, r.params["q"])
@@ -203,29 +227,10 @@ module Campfire
       end
 
       r.get "attachments", Integer do |id|
-        attachment = db[:attachments][id: id] || raise(Error.new("File not found", 404))
-        room_id = db[:messages].where(id: attachment[:message_id]).get(:room_id)
-        repo.room(@user, room_id)
-        path = container.uploads.path(attachment[:key])
-        raise Error.new("File not found", 404) unless File.file?(path)
-        inline = r.params["inline"] == "1" && Uploads::IMAGE_TYPES.include?(attachment[:content_type])
-        headers = response.headers.merge("content-type" => inline ? attachment[:content_type] : "application/octet-stream",
-          "content-disposition" => "#{inline ? 'inline' : 'attachment'}; filename*=UTF-8''#{CGI.escape(attachment[:filename]).gsub('+', '%20')}",
-          "content-length" => File.size(path).to_s)
-        r.halt [200, headers, FileBody.new(path)]
+        attachment(id)
       end
     end
 
   end
 
-  class FileBody
-    def initialize(path) = @path = path
-    def each
-      File.open(@path, "rb") do |file|
-        while (chunk = file.read(64 * 1024))
-          yield chunk
-        end
-      end
-    end
-  end
 end

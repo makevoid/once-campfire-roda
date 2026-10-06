@@ -28,16 +28,49 @@ class ImporterTest < CampfireTest
     end
     now = Time.now.utc
     source[:messages].insert(id: 777, room_id: room.id, creator_id: member.id, client_message_id: "rails-message", created_at: now, updated_at: now)
-    source[:action_text_rich_texts].insert(record_type: "Message", record_id: 777, name: "body", body: "<p>Imported coffee</p><script>bad()</script>")
+    signed_id = Base64.urlsafe_encode64(JSON.generate(_rails: {data: "gid://campfire/User/#{member.id}"})) + "--old-signature"
+    source[:action_text_rich_texts].insert(record_type: "Message", record_id: 777, name: "body", body: %(<p>Imported coffee</p><script>bad()</script> <action-text-attachment sgid="#{signed_id}"></action-text-attachment>))
+    source.create_table(:active_storage_blobs) do
+      primary_key :id
+      String :key
+      String :filename
+      String :content_type
+      String :metadata
+    end
+    source.create_table(:active_storage_attachments) do
+      primary_key :id
+      String :record_type
+      Integer :record_id
+      String :name
+      Integer :blob_id
+      DateTime :created_at
+    end
+    storage = File.join(@directory, "rails-storage")
+    [["Message", 777, "attachment"], ["User", member.id, "avatar"], ["Account", 1, "logo"]].each_with_index do |(type, id, name), index|
+      key = "ab12file#{index}"
+      path = File.join(storage, "ab", "12", key)
+      FileUtils.mkdir_p(File.dirname(path))
+      Vips::Image.black(20, 10).write_to_file("#{path}.png")
+      File.rename("#{path}.png", path)
+      blob = source[:active_storage_blobs].insert(key: key, filename: "#{name}.png", content_type: "image/png", metadata: '{"width":20,"height":10}')
+      source[:active_storage_attachments].insert(record_type: type, record_id: id, name: name, blob_id: blob, created_at: now)
+    end
     source.disconnect
     before = Digest::SHA256.file(source_path).hexdigest
     target_db = Campfire::Database.connect(path: File.join(@directory, "imported.sqlite3"))
     Campfire::Database.migrate(target_db)
     target = Campfire::Container.new(db: target_db, upload_root: File.join(@directory, "imported-files"))
-    counts = Campfire::Importer.new(source: source_path, target: target).run
+    counts = Campfire::Importer.new(source: source_path, target: target, rails_storage: storage).run
     assert_equal 1, counts[:messages]
     assert_equal before, Digest::SHA256.file(source_path).hexdigest
-    assert_equal "<p>Imported coffee</p>", target_db[:messages][id: 777][:body]
+    imported = target_db[:messages][id: 777]
+    assert_equal "Imported coffee\n @Member", imported[:plain_text]
+    refute_includes imported[:body], "bad()"
+    assert_equal [member.id], target.service.mentioned_user_ids(imported[:body])
+    assert_equal 1, counts[:attachments]
+    assert_equal 2, counts[:media]
+    assert_equal "avatar.png", target.media.find("User", member.id, "avatar")[:filename]
+    assert_equal "image/png", target.media.variant(target.media.find("Account", 1, "logo"), :logo).last
     assert_equal DIGEST, target_db[:users][id: member.id][:password_digest]
     assert_equal [777], target.repo.search(target.repo.user(member.id), "coffee").messages.map { |m| m[:id] }
     assert_equal room.id, target.repo.room(target.repo.user(member.id), room.id).id

@@ -1,46 +1,91 @@
-# Compatibility with the Rails source
+# Rails application coverage
 
-This is a partial port. Shared text-message workflows and the supplied benchmark URLs are verified, but full functionality is **not equivalent** to Rails. It uses its own schema and frontend; it does not load Rails models, Rails plugins, Rails templates, or Rails cookies.
+This port implements Campfire's application features with Roda, Sequel and an
+independent Erubi renderer. It carries over the original frontend, including the
+Lexxy editor, Turbo interactions, Stimulus controllers, styles, images and sounds.
+**No Rails, Action View or ActiveSupport Ruby gems are direct or transitive runtime
+dependencies.** The dependency and loaded-constant checks run in the test suite.
 
-| Area | Behavior |
-| --- | --- |
-| Benchmark paths | `/rooms/:id`, `/rooms/:id/messages?before=:id`, `/users/me/sidebar`, `/searches?q=coffee` |
-| Authentication | Same email/password login fields and `session_token` cookie name; new encrypted cookie format. Existing bcrypt hashes import, existing sessions do not. |
-| Message paging | 40 messages per page, timestamp + ID cursor, 40 on either side of a permalink anchor; equal timestamps no longer cause skipped messages. |
-| Search | SQLite FTS5 porter tokenizer, newest 100 authorized matches. Operators and punctuation are treated as words, not executable query syntax. |
-| Permissions | Room membership required even for administrators. Authors/admins edit or delete messages. Direct rooms cannot become open/private rooms. |
-| Boosts | Only the booster can remove a boost, including when another user is an administrator. |
-| Sidebar | Visible shared/direct room order and unread flags follow Rails. Hidden direct chats still exclude their participants from suggestions; the suggestion count preserves Rails' current-user counting behavior. |
-| Direct conversations | A unique canonical participant key replaces scanning all direct rooms. Any participant can delete a direct conversation through its direct-room endpoint. |
-| Live changes | Database-backed two-second polling, 30-second room heartbeats, ten-second sidebar refresh. No Action Cable protocol, typing indicators, or Turbo stream HTML. |
-| Unread delivery | Room-specific durable events and user-scoped sidebar state. The separate fanout benchmark is a transport-free computation probe. |
-| HTML | A sanitized subset of ordinary HTML is preserved. The composer sends plain text; the edit screen accepts sanitized HTML. This is not the original Lexxy rich-text editor. |
-| Attachments | Local files, room-authorized downloads, safe raster image previews. No Active Storage signed URLs, variants, video processing, or remote storage adapter. |
-| Mentions | `@Name` triggers mention notifications/bot webhooks for current room members. Rails signed Action Text mention objects are not recognized. |
-| Notifications | Optional Web Push plus unread indicators; configure VAPID and run `bin/worker`. Presence means a recent visible-page heartbeat. |
-| Bots | `/rooms/:room_id/:bot_key/messages` supports GET/POST/PATCH/PUT/DELETE and nested boosts. Plain-text, HTML, JSON, or multipart posting; membership and ownership apply. Webhooks support text/HTML responses, not binary attachment responses. |
-| Administration | Account name, room-creation restriction, invitations, roles, deactivation, bans, bot keys, bot webhook settings. |
-| Not ported | Uploaded profile/account avatars, custom account CSS, QR codes/session transfer, sound effects, link unfurling/Open Graph embeds, and the original PWA installation UI. |
+The reference is [Campfire](https://github.com/basecamp/once-campfire) revision
+`d2155e85a01b8439c32a3604ebb7f39fea1ace0f`. The independent database schema, cookies,
+signed tokens and file URLs differ; migrate data with the importer instead of
+pointing Roda at a Rails database.
 
-The API returns compact JSON for requests with `Accept: application/json`; HTML forms redirect after writes. JSON fields cover message ID, client ID, timestamps, HTML/plain body, creator, room, boosts, attachments, and URL. Some original Rails response shapes, error formats, named routes, and less-used methods differ.
+| Area | Implemented behavior | Verification |
+| --- | --- | --- |
+| Rendering and frontend | Compiled Erubi templates, escaped output, native helpers, original responsive UI, editor, reactions, menus, search, keyboard controls and asset import map | Renderer tests; live DOM/control comparison; desktop/mobile Chrome |
+| Authentication | Setup, invitation signup, bcrypt login, CSRF, encrypted cookies, sign-in throttling, sign-out, session revocation, return URL and last-room navigation | Rack tests; live login/CSRF/privacy audit |
+| Rooms | Open/private rooms, participant management, conversion between open/private, canonical direct conversations, deletion and notification preferences | Service/Rack tests; live form and private-room audit |
+| Messages | Rich text, edit/delete, idempotent submission, boosts, pagination, permalinks, reply/copy controls, search and search history | Live Rails comparison; browser composer/reaction/edit/search checks |
+| Rich content | Signed user mentions, room-scoped autocomplete, safe Open Graph embeds, autolinks, formatted/code content and built-in `/play` sounds | Rich-content tests; live autocomplete comparison |
+| Realtime | Authenticated WebSockets, original client protocol, Turbo message/boost/sidebar updates, unread/read streams, presence, typing, reconnect refresh and permission revocation | Protocol tests; live Puma WebSocket audit; Chrome subscription and posting |
+| Files | Multipart uploads, authorized downloads, raster thumbnails, video metadata/previews, PDF first-page previews and HTTP byte ranges | Upload/privacy tests; real libvips, FFmpeg and Poppler processing tests |
+| Profiles and account | Avatar/logo upload, variants/removal, initials, bio/password/email, custom CSS, room-creation restriction and invitation rotation | Media/account tests; matching live forms |
+| Administration | Roles, deactivation, release of deactivated email addresses, bans, session revocation and removal of banned content | Authorization/service tests |
+| Transfer | Purpose-bound expiring sign-in links, QR codes and transfer form | Token/CSRF/revocation tests; live QR response check |
+| Bots and API | Raw text/HTML and multipart messages, pagination headers, original message/boost JSON shapes, token rotation and membership/ownership checks | API/Rack tests |
+| Delivery | Durable jobs, mention/direct bot webhooks, text/HTML/file replies, timeout messages, push preferences and presence checks, device management and test notifications | Fake-transport delivery tests, policy tests and ownership tests |
+| PWA | Manifest/icons/shortcuts, installation instructions, notification controls, service worker, notification navigation and badge updates | Live manifest and asset audit; service-worker code review |
+| Import | Accounts, users/passwords, rooms/memberships, messages, boosts, searches, bans, bot hooks, push subscriptions, attachments, avatars/logos and rewritten user mention tokens | Read-only source/checksum test and Rails fixture round trip |
 
-## What was checked against live Rails
+## Live comparison
 
-On 2026-10-06, [`bench/verify_parity.rb`](../bench/verify_parity.rb) passed 54 checks against separate production-mode Rails and Roda servers, using normal login and CSRF protection and disposable matching databases. The reference is Rails Campfire commit `d2155e85a01b8439c32a3604ebb7f39fea1ace0f`. The [saved report](../bench/recorded/2026-10-06/parity.json) lists each check.
+The expanded audit passed **83 checks** against production-mode Rails and Roda
+servers. Both used disposable matching fixtures, normal login and CSRF protection.
+[`bench/verify_parity.rb`](../bench/verify_parity.rb) compares:
 
-- Room pages, earlier/later pagination, permalinks, and search returned identical ordered message IDs, text, basic HTML formatting, authors, timestamps, and boosts.
-- Sidebars agreed on room order, unread flags in the fixture, suggested users, and the result of hiding a direct chat.
-- Authenticated creation, author editing/deletion, search-index updates, and boost creation/removal worked on both. Anonymous access, missing CSRF, non-author editing, and another user's boost removal were rejected.
-- Private-room members could read their messages; outsiders could not read/search/write them or use their IDs as cross-room cursors. The source Rails app returned HTTP 500 for the tested unauthorized private write because its error template was missing; Roda returned 404. Neither persisted the message. The report records that response difference.
+- Ordered message IDs, body text and formatting, authors, timestamps and boosts.
+- Per-message element counts, all eight reaction forms, frontend actions and Turbo
+  frame IDs for room pages, both pagination directions, permalinks and search.
+- Sidebar ordering, unread flags, suggested participants and hidden direct chats.
+- Named form controls on ten room, profile, account and bot screens; autocomplete
+  names/IDs; PWA metadata, logos and QR responses.
+- Writes, search updates, authorship, boost ownership, anonymous access, CSRF,
+  private-room membership and cross-room cursor isolation.
 
-The audit found and fixed two sidebar differences (hidden participants and suggestion counts) and an overly permissive administrator boost-removal rule. Regression tests cover those cases. The fixture builder also now stores whole-second timestamps in Active Record's native format, avoiding a synthetic pagination mismatch.
+The audit caught and fixed a Turbo frame ID mismatch. The browser audit also
+caught a missing HTML charset. These are examples of why comparing only visible
+message text was insufficient.
 
-These checks establish shared behavior for the tested cases, not complete equivalence. They normalize message content rather than compare the whole HTML document. They do not verify browser controls, concurrent live delivery, rich Action Text objects, media, every search syntax, every error response, or every Rails feature. Rails' timestamp-only pagination also differs from Roda's timestamp-plus-ID boundary for tied timestamps. The Roda-only suite covers additional permissions, imports, uploads, durable events, concurrent writes, and delivery adapters; it cannot establish Rails parity for them.
+The Roda tests include **68 tests / 511 assertions**. A separate live frontend audit
+passed **136 asset and WebSocket checks**. Headless Chrome exercised the editor,
+posting, reactions, Unicode, editing, search, profile and mobile layout, with no
+JavaScript errors in the successful run. Screenshots were inspected locally.
 
-## Import details
+## Deliberate implementation differences and test limits
 
-The importer reads accounts, users, rooms, memberships, messages/Action Text body, boosts, searches, bans, webhooks, and push subscriptions. It preserves primary keys. Message attachments are copied when a Rails storage directory is specified. The original source remains read-only.
+Roda uses timestamp-plus-ID pagination to avoid losing messages with tied
+timestamps; Rails uses timestamp boundaries. Roda sanitizes HTML and validates
+inputs before persistence, limits uploads to 25 MB and message HTML to 100 KB,
+requires 12–72-byte passwords, and expires sessions after 30 days. Error pages and
+some rejection status codes differ. The reference returns HTTP 500 for the tested
+unauthorized private-room message POST because its error rendering fails; Roda
+returns 404. Neither persists that message.
 
-Old embedded Action Text objects, inline blob embeds, image variants, avatars, custom style behavior, and signed attachable references are not migrated into equivalent interactive objects. HTML is sanitized during import, so retain the Rails backup if those details matter. Message attachments retain their files and filenames.
+Realtime events and delivery jobs are stored in SQLite. The server implements the
+browser's Action Cable protocol directly with `websocket-driver`; it does not load
+Action Cable Ruby or require Redis. Roda compiles templates once and renders each
+response without fragment or response caching. Rails retains its normal production
+Redis cache in the benchmark.
 
-The new schema enforces unique participant sets, normalized email uniqueness, and per-user query uniqueness. Inconsistent source duplicates fail the import instead of silently selecting one record. Sessions are intentionally omitted. Source secrets are not used by Roda. This importer has automated tests against Rails-shaped fixture tables; no production backup was supplied for an end-to-end migration rehearsal.
+The automated checks cover the features listed above; they are not an exhaustive
+proof of identical behavior for every possible input. Real push-provider delivery
+and OS-level PWA installation need configured VAPID keys and a device; delivery
+tests use fake transports. Only local Chrome was exercised, not Safari or Firefox.
+Docker deployment was not run in this workspace. HTTP read benchmarks do not
+measure browser rendering, uploads, write throughput or background delivery.
+
+## Migration details
+
+The importer opens the source SQLite database read-only and requires an empty
+destination. It preserves IDs, bcrypt hashes and memberships, sanitizes message
+HTML and rebuilds FTS. With `--storage`, it copies message files, user avatars and
+account logos. User mention global IDs in the selected source database are
+re-signed for Roda; legacy Marshal payloads are scanned as bytes, never executed.
+Open Graph embed information is reconstructed when rendered. Derived previews are
+regenerated from originals.
+
+Existing Rails sessions, old signed URLs and generated variants are not imported.
+Unknown embedded object types render as missing attachments. Inconsistent source
+duplicates or missing original files fail the import and roll it back. Keep the
+source backup. No production backup was supplied for a migration rehearsal.

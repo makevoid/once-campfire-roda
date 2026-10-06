@@ -9,6 +9,7 @@ require "sqlite3"
 require "securerandom"
 require "time"
 require "fileutils"
+require "base64"
 require_relative "http_client"
 
 class ParitySession
@@ -58,7 +59,7 @@ end.parse!
 end
 labels = JSON.parse(File.read(options[:labels]))
 abort "Use disposable benchmark fixtures" unless labels["fixture"] == "campfire-roda-benchmark-v1"
-report = {checks: [], limitations: "Checks shared text-message behavior; not full UI, protocol, media, or delivery parity."}
+report = {checks: [], limitations: "Live differential HTTP checks. Media, delivery and realtime have additional Roda integration tests; no claim of exhaustive equivalence."}
 report[:observed_statuses] = {}
 
 check = lambda do |name, condition|
@@ -70,23 +71,25 @@ blocked = ->(response) { %w[302 303 401 403 404 422].include?(response.code) }
 document = ->(response) { Nokogiri::HTML(response.body.to_s, nil, "UTF-8") }
 records = lambda do |response, side|
   document.call(response).css(".message[data-message-id]").map do |node|
-    body = node.at_css(side == "rails" ? '[data-messages-target="body"]' : ".body")
+    body = node.at_css('[data-messages-target="body"]')
     raise "Missing rendered message body" unless body
-    author = node.at_css(side == "rails" ? '[data-reply-target="author"]' : "header a")
-    boosts = if side == "rails"
-      node.css(".boost-item").map do |boost|
+    author = node.at_css('[data-reply-target="author"]')
+    boosts = node.css(".boost-item").map do |boost|
         content = boost.at_css('[data-boost-delete-target="content"]').text
         name = boost.at_css("[aria-label]")["aria-label"].delete_suffix(" boosted #{content}")
         [name, content]
       end
-    else
-      node.css(".boosts .boost").map { |boost| [boost["title"], boost.text] }
-    end
     {id: node["data-message-id"].to_i, author: author.text.strip,
       text: body.text.gsub(/\s+/, " ").strip,
       formatting: body.css("strong,em,b,i,a").map { |element| [element.name, element.text, element["href"]] },
       timestamp: Time.iso8601(node.at_css("time")["datetime"]).utc.iso8601,
-      boosts: boosts.sort}
+      boosts: boosts.sort,
+      # Compare the actual UI work, including all eight quick-boost forms,
+      # accessibility labels, action menus, avatars and Turbo frame targets.
+      elements: node.css("*").group_by(&:name).transform_values(&:length),
+      quick_boosts: node.css('.quick-boosts input[name="boost[content]"]').map { |input| input["value"] },
+      controls: node.css("[data-action]").map { |control| control["data-action"] },
+      frames: node.css("turbo-frame[id]").map { |frame| frame["id"] }}
   end
 end
 sidebar = lambda do |response|
@@ -121,11 +124,38 @@ paths.each do |name, path|
     index = normalized[0].each_index.find { |i| normalized[0][i] != normalized[1][i] }
     warn JSON.pretty_generate(path: path, rails: normalized[0][index || 0], roda: normalized[1][index || 0])
   end
-  check.call("#{name}: identical ordered IDs, text, formatting, authors, timestamps and boosts", normalized[0] == normalized[1] && !normalized[0].empty?)
+  check.call("#{name}: identical messages, formatting, authors, timestamps, boosts, element counts and frontend controls", normalized[0] == normalized[1] && !normalized[0].empty?)
 end
 sidebars = sessions.transform_values { |session| sidebar.call(session.get('/users/me/sidebar')) }
 warn JSON.pretty_generate(sidebars) if sidebars.values.uniq.length != 1
 check.call("sidebar: identical room order, unread flags and suggested users", sidebars.values.uniq.length == 1)
+admin_id = databases.fetch("rails").get_first_value("SELECT id FROM users WHERE email_address = ?", [labels.fetch('emails.david')])
+%W[/rooms/opens/new /rooms/closeds/new /rooms/directs/new /rooms/opens/#{room}/edit /users/me/profile /users/#{admin_id} /account/edit /account/bots/new /account/custom_styles/edit /users/me/push_subscriptions].each do |path|
+  responses = sessions.transform_values { |session| session.get(path) }
+  check.call("#{path}: both frontend pages load", responses.values.all? { |response| response.code == "200" })
+  fields = responses.values.map do |response|
+    document.call(response).css("input[name],textarea[name],select[name],lexxy-editor[name]").map do |field|
+      [field.name, field["name"], field["type"], field["multiple"] ? true : false]
+    end.sort_by(&:to_s)
+  end
+  warn JSON.pretty_generate(path: path, fields: fields) if fields.uniq.length != 1
+  check.call("#{path}: matching named form controls", fields.uniq.length == 1)
+end
+autocomplete = sessions.values.map do |session|
+  response = session.request("GET", "/autocompletable/users.json?room_id=#{room}&query=Person")
+  check.call("autocomplete: JSON response", response.code == "200")
+  JSON.parse(response.body).map { |user| user.slice("name", "value") }
+end
+check.call("autocomplete: matching ordered names and user IDs", autocomplete.uniq.length == 1)
+sessions.each do |side, session|
+  response = session.request("GET", "/webmanifest.json", accept: "application/json")
+  manifest = JSON.parse(response.body)
+  check.call("#{side}: PWA manifest with icons and shortcuts", response.code == "200" && manifest.fetch("icons").length == 3 && manifest.fetch("shortcuts").length == 2)
+  response = session.get("/account/logo")
+  check.call("#{side}: default account logo", response.code == "200" && response['content-type'].start_with?("image/png"))
+  response = session.get("/qr_code/#{Base64.urlsafe_encode64('https://example.test/join/demo')}")
+  check.call("#{side}: session-transfer QR rendering", response.code == "200" && response.body.include?("<svg"))
+end
 %w[rails roda].each do |side|
   uri = URI(options.fetch("#{side}_url".to_sym) + "/rooms/#{room}")
   response = Net::HTTP.start(uri.host, uri.port, nil) { |http| http.get(uri.request_uri) }

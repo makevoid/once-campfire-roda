@@ -68,6 +68,7 @@ paths.each do |name, path|
     raise "#{path}: HTTP #{response.status}" unless response.status == 200
     # CSRF masks change every render; no other content is removed from the hash.
     normalized = response.body.gsub(/(name="(?:csrf-token|authenticity_token)" (?:content|value)=")[^"]+/, '\1[csrf]')
+      .gsub(/(nonce=")[^"]+/, '\1[nonce]').gsub(/(name="csp-nonce" content=")[^"]+/, '\1[nonce]')
     hashes << Digest::SHA256.hexdigest(normalized)
     bytes = response.body.bytesize
   end

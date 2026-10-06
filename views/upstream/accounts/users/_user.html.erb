@@ -1,0 +1,37 @@
+<li class="flex align-center gap margin-none <%= "banned" if user.banned? %>">
+  <figure class="avatar flex-item-no-shrink" style="--avatar-size: 3.75ch;">
+    <%= avatar_tag user, loading: :lazy %>
+  </figure>
+
+  <div class="min-width">
+    <div class="overflow-ellipsis fill-shade"><strong><%= user.name %></strong></div>
+  </div>
+
+  <hr class="separator" aria-hidden="true">
+
+  <% if current.user.can_administer? && user.active? %>
+    <% unless user.bot? %>
+      <%= form_with model: user, url: "/account/users/#{user.id}", data: { controller: "form" }, method: :patch do | form | %>
+        <label class="btn txt-small flex-item-no-shrink" for="<%= dom_id(user, :role) %>">
+          <span class="for-screen-reader">Role: <%= user.administrator? ? "Administrator" : "Member" %></span>
+          <%= image_tag "crown.svg", size: 20, aria: { hidden: "true" } %>
+          <%= form.check_box :role, { data: { action: "form#submit" }, hidden: true, id: dom_id(user, :role), disabled: user == current.user }, "administrator", "member" %>
+        </label>
+      <% end %>
+    <% end %>
+
+    <% unless user == current.user %>
+      <%= button_to "/account/users/#{user.id}", method: :delete, class: "btn txt-small flex-item-no-shrink btn--negative", data: {
+            turbo_confirm: "Are you sure you want to permanently remove this person from the account? This can’t be undone."} do %>
+        <%= image_tag "minus.svg", size: 20, aria: { hidden: "true" } %>
+        <span class="for-screen-reader">Delete <%= user.name %></span>
+      <% end %>
+    <% end %>
+  <% end %>
+  <% if user == current.user %>
+    <%= link_to "/users/me/profile", class: "btn txt-small flex-item-no-shrink", target: "_top" do %>
+      <%= image_tag "pencil.svg", size: 20, aria: { hidden: "true" } %>
+      <span class="for-screen-reader">My settings</span>
+    <% end %>
+  <% end %>
+</li>

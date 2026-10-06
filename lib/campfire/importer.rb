@@ -21,7 +21,7 @@ module Campfire
         %i[accounts users rooms memberships].each { |table| copy_table(table) }
         @source[:messages].order(:id).each do |row|
           text = @source[:action_text_rich_texts].where(record_type: "Message", record_id: row[:id], name: "body").get(:body)
-          content = Content.new(text)
+          content = @target.service.message_content(rewrite_mentions(text))
           @db[:messages].insert(row.merge(body: content.html, plain_text: content.text).slice(*columns(:messages)))
         end
         @counts[:messages] = @db[:messages].count
@@ -59,9 +59,13 @@ module Campfire
 
     def import_attachments
       return unless @source.table_exists?(:active_storage_attachments)
-      @source[:active_storage_attachments].where(record_type: "Message", name: "attachment").each do |attachment|
+      @source[:active_storage_attachments].each do |attachment|
+        type, name, owner_id = attachment.values_at(:record_type, :name, :record_id)
+        supported = (type == "Message" && name == "attachment") || (type == "User" && name == "avatar") || (type == "Account" && name == "logo")
+        next unless supported
         blob = @source[:active_storage_blobs][id: attachment[:blob_id]]
-        next unless blob && @db[:messages][id: attachment[:record_id]]
+        owner_table = {"Message" => :messages, "User" => :users, "Account" => :accounts}.fetch(type)
+        next unless blob && @db[owner_table][id: owner_id]
         key = blob[:key]
         raise "Invalid Rails blob key" unless /\A[A-Za-z0-9_-]+\z/.match?(key)
         source = File.join(@rails_storage, key[0, 2], key[2, 2], key)
@@ -72,12 +76,42 @@ module Campfire
         destination = @target.uploads.path(new_key)
         FileUtils.cp(source, destination)
         @files << destination
-        @db[:attachments].insert(message_id: attachment[:record_id], key: new_key, filename: blob[:filename],
-          content_type: blob[:content_type] || "application/octet-stream", byte_size: File.size(source), created_at: attachment[:created_at])
-        message = @db[:messages][id: attachment[:record_id]]
-        @db[:messages].where(id: message[:id]).update(plain_text: blob[:filename]) if message[:plain_text].empty?
+        values = {key: new_key, filename: blob[:filename], content_type: blob[:content_type] || "application/octet-stream",
+          byte_size: File.size(source), metadata: blob[:metadata].to_s.empty? ? "{}" : blob[:metadata], created_at: attachment[:created_at]}
+        if type == "Message"
+          @db[:attachments].insert(values.merge(message_id: owner_id))
+          message = @db[:messages][id: owner_id]
+          @db[:messages].where(id: owner_id).update(plain_text: blob[:filename]) if message[:plain_text].empty?
+        else
+          @db[:media].insert(values.merge(owner_type: type, owner_id: owner_id, purpose: name))
+        end
       end
       @counts[:attachments] = @db[:attachments].count
+      @counts[:media] = @db[:media].count
+    end
+
+    # The user explicitly selected this local Rails database for migration. Only
+    # User global IDs are recovered, then signed with this installation's key.
+    # Legacy Marshal payloads are scanned as bytes, never deserialized as Ruby.
+    def rewrite_mentions(body)
+      fragment = Nokogiri::HTML5.fragment(body.to_s)
+      fragment.css("action-text-attachment[sgid]").each do |node|
+        encoded = node["sgid"].to_s.split("--", 2).first
+        next if encoded.to_s.bytesize > 8192
+        begin
+          envelope = JSON.parse(Base64.urlsafe_decode64(encoded)).fetch("_rails", {})
+          gid = envelope["data"]
+          gid ||= Base64.urlsafe_decode64(envelope["message"]).match(%r{gid://campfire/User/\d+})&.to_s if envelope["message"]
+          match = %r{\Agid://campfire/User/(\d+)(?:\?|\z)}.match(gid.to_s)
+          next unless match && @db[:users][id: match[1].to_i]
+          node["sgid"] = @target.tokens.generate(match[1].to_i, purpose: :mention)
+          node["content-type"] = "application/vnd.campfire.mention"
+          node.remove_attribute("content")
+        rescue JSON::ParserError, ArgumentError, TypeError
+          # The renderer displays invalid or unknown attachments as missing.
+        end
+      end
+      fragment.to_html
     end
   end
 end

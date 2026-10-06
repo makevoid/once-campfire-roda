@@ -5,20 +5,32 @@ require_relative "campfire/domain"
 require_relative "campfire/repository"
 require_relative "campfire/authentication"
 require_relative "campfire/uploads"
+require_relative "campfire/media"
+require_relative "campfire/tokens"
 require_relative "campfire/service"
-require_relative "campfire/renderer"
+require_relative "campfire/file_body"
 require_relative "campfire/delivery"
+require_relative "campfire/push_policy"
+require_relative "campfire/opengraph"
+require_relative "campfire/sound"
+require_relative "campfire/ui/view"
+require_relative "campfire/api"
+require_relative "campfire/realtime/hub"
+require_relative "campfire/realtime/protocol"
+require_relative "campfire/realtime/socket"
 
 module Campfire
   class Container
-    attr_reader :db, :repo, :auth, :uploads, :service, :renderer
-    def initialize(db:, upload_root: ENV.fetch("UPLOAD_ROOT", File.expand_path("../storage/files", __dir__)))
+    attr_reader :db, :repo, :auth, :uploads, :media, :tokens, :service, :hub
+    def initialize(db:, upload_root: ENV.fetch("UPLOAD_ROOT", File.expand_path("../storage/files", __dir__)), push_resolver: Resolv.method(:getaddresses))
       @db = db
       @repo = Repository.new(db)
       @auth = Authentication.new(db)
       @uploads = Uploads.new(upload_root)
-      @service = Service.new(repo, uploads)
-      @renderer = Renderer.new
+      @media = Media.new(db, @uploads)
+      @tokens = Tokens.new(Authentication.session_secret)
+      @service = Service.new(repo, uploads, tokens: tokens, media: media, push_resolver: push_resolver)
+      @hub = Realtime::Hub.new(db)
       freeze
     end
   end

@@ -3,8 +3,9 @@
 module Campfire
   class Service
     attr_reader :repo, :db
-    def initialize(repo, uploads)
-      @repo, @db, @uploads = repo, repo.db, uploads
+    def initialize(repo, uploads, tokens: nil, media: nil, push_resolver: Resolv.method(:getaddresses))
+      @repo, @db, @uploads, @tokens, @media = repo, repo.db, uploads, tokens, media
+      @push_resolver = push_resolver
     end
 
     def setup(attributes)
@@ -40,7 +41,9 @@ module Campfire
     end
 
     def update_profile(actor, attributes)
-      changes = {name: required(attributes["name"], "Name", 100), bio: attributes["bio"].to_s[0, 2000], updated_at: Time.now.utc}
+      changes = {updated_at: Time.now.utc}
+      changes[:name] = required(attributes["name"], "Name", 100) if attributes.key?("name")
+      changes[:bio] = attributes["bio"].to_s[0, 2000] if attributes.key?("bio")
       if attributes["email_address"]
         email = attributes["email_address"].strip.downcase
         raise Error, "Enter a valid email address" unless email.match?(/\A[^\s@]+@[^\s@]+\.[^\s@]+\z/)
@@ -67,6 +70,7 @@ module Campfire
           creator_id: actor.id, type: type, direct_key: direct_key, created_at: now, updated_at: now)
         ids = db[:users].where(status: 0).select_map(:id) if type == "Rooms::Open"
         grant(id, ids, type == "Rooms::Direct" ? "everything" : "mentions")
+        notify_sidebar(ids)
         repo.room(actor, id)
       end
     end
@@ -79,8 +83,10 @@ module Campfire
         raise Error, "Invalid room type" unless %w[Rooms::Open Rooms::Closed].include?(type)
         db[:rooms].where(id: room.id).update(name: required(attributes["name"], "Room name", 100), type: type, updated_at: Time.now.utc)
         ids = type == "Rooms::Open" ? db[:users].where(status: 0).select_map(:id) : active_ids(user_ids + [actor.id])
+        prior_ids = db[:memberships].where(room_id: room.id).select_map(:user_id)
         db[:memberships].where(room_id: room.id).exclude(user_id: ids).delete
         grant(room.id, ids)
+        notify_sidebar(prior_ids | ids)
       end
     end
 
@@ -89,14 +95,19 @@ module Campfire
         room = repo.room(actor, room_id)
         raise Error.new("Room not found", 404) if direct_only && !room.direct?
         administer!(actor, room) unless direct_only
+        notify_sidebar(db[:memberships].where(room_id: room.id).select_map(:user_id))
         db[:rooms].where(id: room.id).delete
       end
     end
 
     def post_message(actor, room_id, attributes)
-      content = Content.new(attributes["body"])
+      content = message_content(attributes["body"])
       upload = @uploads.stage(attributes["attachment"])
-      raise Error, "Write a message or attach a file" if content.text.empty? && !upload
+      if upload && @media
+        upload[:metadata] = JSON.generate(@media.analyze_attachment(upload))
+        @media.variant(upload, :thumb)
+      end
+      raise Error, "Write a message or attach a file" if content.empty? && !upload
       result = db.transaction(mode: :immediate) do
         room = repo.room(actor, room_id)
         now = Time.now.utc
@@ -109,7 +120,7 @@ module Campfire
           next existing
         end
         id = db[:messages].insert(room_id: room.id, creator_id: actor.id, client_message_id: client_id,
-          body: content.html, plain_text: content.text.empty? ? upload[:filename] : content.text, created_at: now, updated_at: now)
+          body: content.html, plain_text: content.text.empty? ? upload&.fetch(:filename).to_s : content.text, created_at: now, updated_at: now)
         db[:attachments].insert(upload.merge(message_id: id, created_at: now)) if upload
         touch_room(room.id, now)
         db[:memberships].where(room_id: room.id).exclude(user_id: actor.id).exclude(involvement: "invisible")
@@ -124,18 +135,35 @@ module Campfire
       raise
     end
 
+    def mentioned_user_ids(body)
+      return [] unless @tokens
+      Nokogiri::HTML5.fragment(body.to_s).css("action-text-attachment[sgid]").filter_map do |node|
+        id = @tokens.verify(node["sgid"], purpose: :mention)
+        id if id.is_a?(Integer)
+      end.uniq
+    end
+
+    def message_content(body)
+      Content.new(body, mention_name: ->(token) do
+        id = @tokens&.verify(token, purpose: :mention)
+        if id.is_a?(Integer) && (name = db[:users].where(id: id).get(:name))
+          "@#{name}"
+        end
+      end)
+    end
+
     def edit_message(actor, room_id, id, attributes)
-      content = Content.new(attributes["body"])
+      content = message_content(attributes["body"])
       db.transaction(mode: :immediate) do
         room = repo.room(actor, room_id)
         message = repo.message(room.id, id)
         administer!(actor, message)
         attachment = db[:attachments][message_id: id]
-        raise Error, "Write a message or attach a file" if content.text.empty? && !attachment
+        raise Error, "Write a message or attach a file" if content.empty? && !attachment
         now = Time.now.utc
-        db[:messages].where(id: id).update(body: content.html, plain_text: content.text.empty? ? attachment[:filename] : content.text, updated_at: now)
+        db[:messages].where(id: id).update(body: content.html, plain_text: content.text.empty? ? attachment&.fetch(:filename).to_s : content.text, updated_at: now)
         touch_room(room.id, now)
-        event(room.id, id, "update", now)
+        event(room.id, id, "edit", now)
         repo.message(room.id, id)
       end
     end
@@ -143,11 +171,12 @@ module Campfire
     def delete_message(actor, room_id, id)
       db.transaction(mode: :immediate) do
         room = repo.room(actor, room_id)
-        administer!(actor, repo.message(room.id, id))
+        message = repo.message(room.id, id)
+        administer!(actor, message)
         db[:messages].where(id: id).delete
         now = Time.now.utc
         touch_room(room.id, now)
-        event(room.id, id, "delete", now)
+        event(room.id, id, "delete", now, client_message_id: message[:client_message_id])
       end
     end
 
@@ -158,7 +187,7 @@ module Campfire
         now = Time.now.utc
         id = db[:boosts].insert(message_id: message_id, booster_id: actor.id, content: required(content, "Boost", 16), created_at: now, updated_at: now)
         db[:messages].where(id: message_id).update(updated_at: now)
-        event(room.id, message_id, "update", now)
+        event(room.id, message_id, "boost_create", now, boost_id: id)
         id
       end
     end
@@ -172,7 +201,7 @@ module Campfire
         db[:boosts].where(id: id).delete
         now = Time.now.utc
         db[:messages].where(id: message_id).update(updated_at: now)
-        event(room_id, message_id, "update", now)
+        event(room_id, message_id, "boost_delete", now, boost_id: id)
       end
     end
 
@@ -180,6 +209,7 @@ module Campfire
       raise Error, "Invalid notification setting" unless %w[invisible nothing mentions everything].include?(value)
       repo.room(actor, room_id)
       db[:memberships].where(room_id: room_id, user_id: actor.id).update(involvement: value, updated_at: Time.now.utc)
+      notify_sidebar([actor.id])
     end
 
     def heartbeat(actor, room_id)
@@ -217,7 +247,7 @@ module Campfire
             db[:sessions].where(user_id: user_id).exclude(ip_address: [nil, ""]).select_map(:ip_address).uniq.each do |ip|
               db[:bans].insert(user_id: user_id, ip_address: ip, created_at: now, updated_at: now)
             end
-            db[:messages].where(creator_id: user_id).select(:id, :room_id).each { |m| event(m[:room_id], m[:id], "delete", now) }
+            db[:messages].where(creator_id: user_id).select(:id, :room_id, :client_message_id).each { |m| event(m[:room_id], m[:id], "delete", now, client_message_id: m[:client_message_id]) }
             db[:messages].where(creator_id: user_id).delete
           else
             db[:memberships].where(user_id: user_id, room_id: db[:rooms].exclude(type: "Rooms::Direct").select(:id)).delete
@@ -225,7 +255,9 @@ module Campfire
           db[:sessions].where(user_id: user_id).delete
           db[:searches].where(user_id: user_id).delete
           db[:push_subscriptions].where(user_id: user_id).delete
-          db[:users].where(id: user_id).update(status: action == :ban ? 2 : 1, updated_at: now)
+          changes = {status: action == :ban ? 2 : 1, updated_at: now}
+          changes[:email_address] = target[:email_address]&.gsub("@", "-deactivated-#{SecureRandom.uuid}@") if action == :deactivate
+          db[:users].where(id: user_id).update(changes)
         when :unban
           db[:bans].where(user_id: user_id).delete
           db[:users].where(id: user_id).update(status: 0, updated_at: now)
@@ -256,8 +288,8 @@ module Campfire
 
     def subscribe(actor, attributes, agent:)
       endpoint = attributes["endpoint"].to_s
-      OutboundHTTP.uri(endpoint, https_only: true)
-      keys = attributes["keys"] || {}
+      PushPolicy.validate!(endpoint, resolver: @push_resolver)
+      keys = attributes["keys"] || {"p256dh" => attributes["p256dh_key"], "auth" => attributes["auth_key"]}
       p256dh, auth = keys["p256dh"].to_s, keys["auth"].to_s
       raise Error, "Invalid push keys" unless Base64.urlsafe_decode64(p256dh).bytesize == 65 && Base64.urlsafe_decode64(auth).bytesize == 16
       db.transaction(mode: :immediate) do
@@ -282,7 +314,9 @@ module Campfire
     end
 
     def required(value, label, length)
-      value = value.to_s.strip
+      value = value.to_s.dup.force_encoding(Encoding::UTF_8)
+      raise Error, "#{label} must use valid UTF-8" unless value.valid_encoding?
+      value = value.strip
       raise Error, "#{label} must contain 1–#{length} characters" if value.empty? || value.length > length
       value
     end
@@ -312,8 +346,14 @@ module Campfire
       db[:rooms].where(id: id).update(updated_at: now)
     end
 
-    def event(room_id, message_id, kind, now)
-      db[:events].insert(room_id: room_id, message_id: message_id, kind: kind, created_at: now)
+    def notify_sidebar(user_ids)
+      db[:broadcasts].insert(stream: "sidebar", payload: JSON.generate(users: user_ids), created_at: Time.now.utc)
+    end
+
+    def event(room_id, message_id, kind, now, **payload)
+      message = db[:messages][id: message_id]
+      payload = {client_message_id: message[:client_message_id], creator_id: message[:creator_id]}.merge(payload) if message
+      db[:events].insert(room_id: room_id, message_id: message_id, kind: kind, created_at: now, payload: JSON.generate(payload))
     end
   end
 end

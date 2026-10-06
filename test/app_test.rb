@@ -121,12 +121,12 @@ class AppTest < CampfireTest
     message = post_message(member)
     boost_id = service.boost(member, room.id, message[:id], "☕")
     sign_in(admin)
-    refute_includes last_response.body, %(data-boost-id="#{boost_id}")
+    assert_equal member.id.to_s, Nokogiri::HTML5(last_response.body).at_css("#boost_#{boost_id}")["data-boost-delete-booster-id-value"]
     mutate(:delete, "/messages/#{message[:id]}/boosts/#{boost_id}")
     assert_equal 403, last_response.status
     refute_nil db[:boosts][id: boost_id]
     sign_in(member)
-    assert_includes last_response.body, %(data-boost-id="#{boost_id}")
+    assert_equal member.id.to_s, Nokogiri::HTML5(last_response.body).at_css("#boost_#{boost_id}")["data-boost-delete-booster-id-value"]
     mutate(:delete, "/messages/#{message[:id]}/boosts/#{boost_id}")
     assert_equal 204, last_response.status
     assert_nil db[:boosts][id: boost_id]
@@ -227,7 +227,7 @@ class AppTest < CampfireTest
     base = "/rooms/#{room.id}/#{bot.id}-#{bot[:bot_token]}/messages"
     post base, "robot coffee", {"CONTENT_TYPE" => "text/plain"}
     assert_equal 201, last_response.status, last_response.body
-    id = JSON.parse(last_response.body)["id"]
+    id = last_response.headers.fetch("location").split("/").last.to_i
     get base
     assert_equal 200, last_response.status
     assert_equal "1", last_response.headers["x-total-count"]
@@ -280,7 +280,7 @@ class AppTest < CampfireTest
     assert_equal 304, last_response.status
     header "If-None-Match", nil
     get "/rooms/#{room.id}/messages?before=44"
-    assert_equal 40, last_response.body.scan('class="message"').length
+    assert_equal 40, Nokogiri::HTML5.fragment(last_response.body).css(".message[data-message-id]").length
     12.times { |i| service.record_search(member, "coffee #{i}") }
     assert_equal 10, db[:searches].where(user_id: member.id).count
     service.record_search(outsider, "coffee")
@@ -307,7 +307,7 @@ class AppTest < CampfireTest
     assert_equal "New name", db[:users][id: admin.id][:name]
     sign_in(member)
     get "/account/edit"
-    assert_equal 403, last_response.status
+    assert_equal 200, last_response.status
   end
 
   def test_last_administrator_is_preserved

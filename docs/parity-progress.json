@@ -1,0 +1,49 @@
+{
+  "reference": "d2155e85a01b8439c32a3604ebb7f39fea1ace0f",
+  "objective": "Port the Campfire application and frontend to independent Roda, Sequel and Erubi with no Rails Ruby dependencies.",
+  "benchmark_status": "Completed: four alternating rounds, 83,659 HTTP 200 responses, zero transport errors. See bench/recorded/2026-10-06-erubi.",
+  "work": [
+    {
+      "area": "Avatar/logo variants, custom styles, QR and session transfers",
+      "status": "Implemented; media, token, transfer and account integration tests; live form/logo/QR checks."
+    },
+    {
+      "area": "Link metadata fetching and network restrictions",
+      "status": "Implemented; public-network and metadata tests; original unfurl controller and embed rendering ported."
+    },
+    {
+      "area": "Original templates, assets, editor, navigation and PWA",
+      "status": "Implemented; original assets/controllers, native Erubi templates, live asset audit and desktop/mobile Chrome checks."
+    },
+    {
+      "area": "Room channels, presence, typing, Turbo streams and reconnect",
+      "status": "Implemented; protocol privacy/presence tests and live Puma WebSocket checks."
+    },
+    {
+      "area": "Signed rich-text mentions, link embeds, formatting and sound messages",
+      "status": "Implemented; signed mention/rich-text/sound tests and live autocomplete comparison."
+    },
+    {
+      "area": "Message attachment processing, videos and embedded media",
+      "status": "Implemented; uploads, authorization, byte ranges and actual image/video/PDF processing tests."
+    },
+    {
+      "area": "Complete API responses, account/bot/profile forms, push and bot reply behavior",
+      "status": "Implemented; bot/API/push form and fake-transport delivery tests; live account/profile/bot form comparison."
+    },
+    {
+      "area": "Importer for media/rich objects and source route/system-test coverage",
+      "status": "Implemented; read-only import tests cover files, avatars/logos, mention tokens; Rails fixture round trip verified."
+    },
+    {
+      "area": "Live behavioral/browser audit, controlled benchmark, README and publication",
+      "status": "Completed locally: 83 differential checks, 136 frontend/WebSocket checks, controlled benchmark and prominent README table."
+    }
+  ],
+  "verification_limits": [
+    "Automated coverage is not an exhaustive proof of identical behavior for every input.",
+    "Real push-provider delivery and OS-level PWA installation require a configured device.",
+    "Local Chrome was exercised; other browser engines and Docker deployment were not run.",
+    "Unknown legacy embedded object types render as missing attachments."
+  ]
+}

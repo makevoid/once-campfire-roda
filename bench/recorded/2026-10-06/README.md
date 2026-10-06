@@ -1,6 +1,6 @@
-# Rails/Roda comparison evidence
+# Historical partial-port comparison evidence
 
-Recorded after the route refactor and behavior fixes on 2026-10-06. See [methodology and results](../../../docs/performance.md#live-rails-and-roda-comparison) and [reproduction commands](../../README.md#reproduce-the-recorded-rails-comparison).
+Recorded after the route refactor and behavior fixes on 2026-10-06. These numbers describe the former minimal frontend. See [historical methodology and results](../../../docs/performance-partial-port.md#live-rails-and-roda-comparison) and [reproduction commands](../../README.md#reproduce-the-recorded-rails-comparison).
 
 - `baseline-1.json` through `baseline-4.json`: all Rails round results.
 - `roda-1.json` through `roda-4.json`: all Roda round results.

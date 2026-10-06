@@ -1,0 +1,5 @@
+# Preserve the original compiled frontend distributions and identify them as
+# vendored assets when GitHub summarizes the application language mix.
+public/assets/** linguist-vendored
+public/original/** linguist-vendored
+licenses/** linguist-vendored

@@ -1,0 +1,22 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# Plain Ruby asset compilation; no Rails pipeline is required.
+require "json"
+require "digest"
+require "fileutils"
+root = File.expand_path("..", __dir__)
+assets = File.join(root, "public/assets")
+manifest_path = File.join(assets, ".manifest.json")
+manifest = JSON.parse(File.read(manifest_path))
+Dir[File.join(root, "frontend/**/*.js")].sort.each do |file|
+  name = file.delete_prefix("#{root}/frontend/")
+  source = File.binread(file)
+  target = name.sub(/\.js\z/, "-#{Digest::SHA256.hexdigest(source)[0, 8]}.js")
+  old = manifest.dig(name, "digested_path")
+  FileUtils.mkdir_p(File.dirname(File.join(assets, target)))
+  File.binwrite(File.join(assets, target), source)
+  FileUtils.rm_f(File.join(assets, old)) if old && old != target
+  manifest[name] = {"digested_path" => target, "integrity" => nil, "app" => true}
+end
+File.write(manifest_path, JSON.generate(manifest))
+puts "Built #{Dir[File.join(root, 'frontend/**/*.js')].length} frontend modules"

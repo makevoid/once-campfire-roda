@@ -1,12 +1,65 @@
-# Campfire — Roda + Sequel
+<h1 align="center">Campfire — Roda + Sequel + Erubi</h1>
 
-An object-oriented Ruby reimplementation of [37signals' Campfire](https://github.com/basecamp/once-campfire), focused on shared messaging workflows and its message benchmarks. Roda handles HTTP routing, Sequel handles SQLite queries and transactions, and a small compiled ERB renderer serves HTML. Rails, Active Record, Redis, Node, and an asset build are not runtime dependencies.
+<h2 align="center">Rails vs. Roda benchmarks</h2>
 
-**This is a partial port, not full Rails feature parity.** Text-message behavior is checked against the Rails application, but the editor, media handling, live-update transport, and parts of the UI differ. Read the [compatibility report](docs/compatibility.md) before using it as a replacement.
+<p align="center">
+  <strong>16 concurrent clients · Median of 4 rounds · Requests per second</strong><br>
+  Ruby 4.0.2 + YJIT · Five-thread Puma · Matching 2,000-message fixtures
+</p>
+
+<table align="center">
+  <thead>
+    <tr>
+      <th align="left">Workload</th>
+      <th align="right">Rails req/s</th>
+      <th align="right">Roda req/s</th>
+      <th align="right">Roda / Rails</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Room (40 messages)</td>
+      <td align="right">179</td>
+      <td align="right"><strong>217</strong></td>
+      <td align="right"><strong>1.21×</strong></td>
+    </tr>
+    <tr>
+      <td>Earlier messages (40)</td>
+      <td align="right">283</td>
+      <td align="right"><strong>275</strong></td>
+      <td align="right"><strong>0.97×</strong></td>
+    </tr>
+    <tr>
+      <td>Sidebar</td>
+      <td align="right">294</td>
+      <td align="right"><strong>644</strong></td>
+      <td align="right"><strong>2.19×</strong></td>
+    </tr>
+    <tr>
+      <td>Search (100 matches)</td>
+      <td align="right">122</td>
+      <td align="right"><strong>114</strong></td>
+      <td align="right"><strong>0.93×</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<p align="center">
+  <strong>83,659 successful requests · Zero errors</strong><br>
+  Measured 2026-10-06 ·
+  <a href="docs/performance.md#live-rails-and-roda-comparison">Detailed results &amp; methodology</a> ·
+  <a href="bench/recorded/2026-10-06-erubi/">Recorded measurements</a>
+</p>
+
+---
+
+A port of [37signals’ Campfire](https://github.com/basecamp/once-campfire) using **Roda + Sequel + Erubi**, with the original frontend and an independent Ruby renderer. **No ActiveSupport, Action View, Active Record or other Rails Ruby dependencies.**
+
+The table compares the Rails and Roda framework stacks serving matching Campfire data and frontend controls. The benchmark includes the full message UI, editor page, reaction forms, avatars and menus. [Coverage and verification](docs/compatibility.md) describe the application behavior tested.
 
 ## Run
 
-Requires Ruby 4.0 and SQLite with FTS5 (included in the bundled sqlite3 gem).
+Requires Ruby 4.0, SQLite with FTS5 (included by the sqlite3 gem), libvips, FFmpeg and Poppler. On macOS: `brew install ruby vips ffmpeg poppler`.
 
 ```sh
 bundle install
@@ -14,41 +67,36 @@ bundle exec rake db:migrate
 bundle exec rake dev
 ```
 
-Visit **http://127.0.0.1:9292** and create the first administrator. The database defaults to `storage/campfire.sqlite3`. Start the optional delivery worker in another terminal:
+Open **http://127.0.0.1:9292** and create the first administrator. Invite people from Account settings. The database defaults to `storage/campfire.sqlite3`; files live in `storage/files`.
+
+Start the delivery worker for bot webhooks and push notifications:
 
 ```sh
 bundle exec ruby bin/worker
 ```
 
-Use the invitation in Account settings to add people. Passwords must be 12–72 bytes. For sample data, use the isolated benchmark seed below; it does not populate the normal application database.
+The application needs neither Redis nor Node. Frontend assets are included. After changing `frontend/`, run `bundle exec ruby bin/build_frontend` and restart Puma.
 
-## Implemented
+## Features
 
-- First-run setup, invitations, bcrypt passwords, encrypted session cookies, revocation, CSRF protection, and sign-in throttling.
-- Open/private rooms, membership management, notification preferences, and direct conversations unique to their participant set.
-- Messages, safe HTML, editing/deletion, boosts, idempotent posting, file uploads/downloads, and raster image previews.
-- Indexed cursor pagination, message permalinks, room-scoped FTS5 search, and per-user search history.
-- Unread room state, presence heartbeats, and live changes including edits/deletions through a durable polling feed.
-- User profiles, administrator roles, deactivation, banning, invitation rotation, bots, bot key rotation, and bot message/boost APIs.
-- Durable background jobs, `@Name` mentions, bot webhooks with text replies, and optional Web Push notifications.
-- A read-only Rails importer, automated tests, and the benchmark workloads from the supplied Rails app.
+- Setup, invitations, authentication, CSRF, sign-in throttling, profile/avatar management, account logos, custom CSS and session-transfer QR codes.
+- Open/private rooms, participant management, direct conversations, unread state, presence, typing indicators and live Turbo updates over WebSockets.
+- Lexxy rich text, signed mentions/autocomplete, Open Graph previews, sound messages, replies, reactions, editing, deletion, search and history.
+- File uploads/downloads, image thumbnails, video/PDF previews, media seeking and room authorization.
+- Administration, bans/deactivation, bot keys and APIs, webhook text/file replies, durable delivery jobs, Web Push and PWA controls.
+- Read-only import of Rails data, including attachments, avatars/logos and user mention tokens.
 
-This is a new frontend and database schema, **not a drop-in Rails/Hotwire replacement**. See [compatibility](docs/compatibility.md) before importing an existing installation.
+[Detailed compatibility](docs/compatibility.md) includes verification coverage, migration requirements and implementation differences. [Frontend provenance and licenses](THIRD_PARTY_NOTICES.md) identify the reused browser libraries.
 
-## Architecture and speed
+## Architecture
 
-`App` owns middleware and the top-level route tree. Private modules in `lib/campfire/routes/` group message, room, user, account, and shared request handling. They call `Service`, which coordinates authorization and transactions. `Repository` owns Sequel datasets and bulk loading. `User` and `Room` hold domain behavior; `Page` holds presentation data. `Renderer` has precompiled templates. `Authentication`, `Uploads`, `JobQueue`, `Delivery`, and `Importer` have separate responsibilities. A dependency container connects them, so tests use isolated databases and delivery transports.
+`App` owns middleware and the route tree. Modules in `lib/campfire/routes/` handle request concerns and call `Service` for authorization and transactional writes. `Repository` owns Sequel datasets, pagination, search and bulk loading.
 
-- SQLite WAL, a connection pool, a Ruby busy handler that releases the GVL, and short `BEGIN IMMEDIATE` write transactions.
-- `(room_id, created_at, id)` cursor index; no message OFFSET scans and deterministic handling of identical timestamps.
-- One joined query for message/creator data and two bulk queries for boosts and attachments, regardless of page size.
-- FTS5 with permission filtering before the result limit and triggers that update the index in the message transaction.
-- A database-local fast parser for the UTC timestamp format, with Sequel's normal parser retained for other formats.
-- Precompiled ERB and escaped string rendering; no per-message partial evaluation or ORM object graph.
-- No response cache, process-local authorization cache, or special benchmark authentication bypass.
-- Outbound HTTP runs in the worker, outside message writes and request handling.
+`UI::Engine` compiles Erubi templates into reusable Ruby methods. Frequently rendered messages and reactions use direct HTML with interpolated URLs. Small, independent helper modules handle forms, escaped attributes, rich content and other presentation needs. Presentation adapters wrap database rows; they do not persist or authorize. No Rails compatibility layer or standard-library monkey patches are used.
 
-SQLite uses `synchronous=NORMAL`: the database remains consistent after a crash, but a power failure can lose the latest committed transactions. Tune this in `Database.connect` if stronger durability is needed.
+`Media`, `Tokens`, `API`, `Authentication`, `Delivery` and `Importer` have separate responsibilities. The realtime server implements the browser’s wire protocol with `websocket-driver`; SQLite events carry changes across Puma processes. Durable jobs keep outbound requests out of message writes.
+
+Performance choices include indexed cursor pagination, bulk message/boost/file queries, FTS5 permission filtering before LIMIT, SQLite WAL and short write transactions. Templates compile once, while each response is rendered afresh. There are no benchmark-only routes, authentication shortcuts or response caches.
 
 ## Tests and benchmarks
 
@@ -59,24 +107,15 @@ bundle exec ruby bench/message_hot_paths.rb --seed tmp/bench-seed
 ruby bench/compare_http.rb --seed tmp/bench-seed --duration 10 --rounds 2
 ```
 
-The seed has 2,000 messages, 100 users, 12 open rooms, 8 direct rooms, and boosts. The benchmark drivers snapshot the fixture database before running; they do not benchmark against the normal application database. HTTP requests use the supplied Rails `BenchmarkHTTPClient` unchanged, including normal CSRF login, keep-alive, full response consumption, and mandatory HTTP 200 results.
+Validation: **68 tests / 511 assertions**, **83 live Rails/Roda checks**, **136 live frontend/WebSocket checks**, plus a successful desktop/mobile Chrome interaction audit. Checks cover full message structure and controls, named forms, writes/search updates, CSRF, ownership and private-room isolation. The Ruby suite also asserts that no Rails gems or ActiveSupport/Action View constants are loaded.
 
-The final comparison was rerun after the route refactor and behavior fixes on 2026-10-06. Both production Puma servers used Ruby 4.0.2 with YJIT, five threads, and matching fixtures. **All 276,946 measured requests returned HTTP 200 with zero transport errors.** Medians of four rounds at **16 concurrent clients**:
+The final comparison uses 2,000 messages, 100 users, 20 rooms, 1,216 memberships and 400 boosts. Both apps use Ruby 4.0.2 with YJIT, one five-thread Puma and matching imported data. Rails keeps its production Redis cache; Roda renders without fragment caching. Four alternating rounds are retained, including timing variation. The supplied Rails HTTP client is unchanged.
 
-| Shared read workload | Rails req/s | Roda req/s | Roda / Rails |
-| --- | ---: | ---: | ---: |
-| Room (40 messages) | 128 | 1,333 | 10.38× |
-| Earlier messages (40) | 247 | 2,061 | 8.35× |
-| Sidebar | 265 | 2,600 | 9.81× |
-| Search (100 matches) | 108 | 932 | 8.65× |
-
-These are application measurements on shared text-reading workloads, **not a framework-only speedup or full feature equivalence**. Roda returns 14.7–16.0× less HTML and has a simpler frontend. All rounds are retained, including substantial timing variation. [Detailed results](docs/performance.md#live-rails-and-roda-comparison) include concurrency 1, latency, response sizes, ranges, and resource use; [per-round JSON evidence](bench/recorded/2026-10-06/) and [reproduction commands](bench/README.md#reproduce-the-recorded-rails-comparison) are published.
-
-Validation: **37 tests / 241 assertions** and **54 live Rails/Roda behavior checks** passed. The audit compares rendered message content, pagination, sidebars, writes/search updates, CSRF, ownership, and private-room isolation. It found and fixed sidebar and boost-ownership mismatches. [Compatibility details and remaining gaps](docs/compatibility.md) explain exactly what is verified.
+See [measurements and methodology](docs/performance.md#live-rails-and-roda-comparison), [raw results](bench/recorded/2026-10-06-erubi/), and [reproduction instructions](bench/README.md#reproduce-the-recorded-rails-comparison). Earlier minimal-frontend measurements are preserved as [historical results](docs/performance-partial-port.md).
 
 ## Import Rails data
 
-Work from a consistent backup of the Rails SQLite database and Active Storage directory. The destination must be new:
+Use a consistent backup of the Rails SQLite database and its local Active Storage directory. The destination must be new:
 
 ```sh
 bundle exec ruby bin/import-rails \
@@ -87,29 +126,29 @@ bundle exec ruby bin/import-rails \
 DATABASE_PATH=storage/imported.sqlite3 bundle exec rake dev
 ```
 
-The importer opens the source read-only, preserves IDs/password hashes/memberships, sanitizes message HTML, rebuilds FTS, and copies message attachments when `--storage` is provided. Existing Rails sessions are not imported. Import fails and rolls back on incompatible duplicate records or missing attachment files. Keep the original backup: embedded Action Text objects and other unsupported Rails-specific features are not losslessly represented.
+The importer opens the source read-only, preserves IDs/password hashes/memberships, sanitizes rich text, re-signs known user mentions, rebuilds FTS and copies original files. Existing Rails sessions and signed URLs do not carry over. Import rolls back on incompatible duplicates or missing files. Retain the original backup; unknown embedded object types render as missing attachments. See [migration details](docs/compatibility.md#migration-details).
 
 ## Production
 
-Set `SESSION_SECRET` to at least 64 random bytes, retain it across restarts, and put Puma behind an HTTPS reverse proxy. Never reuse the documented benchmark fixture secret in production.
+Set a stable `SESSION_SECRET` of at least 64 random bytes and put Puma behind an HTTPS reverse proxy:
 
 ```sh
 export SESSION_SECRET="$(ruby -rsecurerandom -e 'print SecureRandom.hex(64)')"
 RACK_ENV=production HOST=127.0.0.1 PORT=9292 bundle exec puma -C config/puma.rb
 ```
 
-Configuration: `DATABASE_PATH`, `UPLOAD_ROOT`, `HOST`, `PORT`, `MAX_THREADS` (5), `DB_POOL` (5), and `WEB_CONCURRENCY` (0). Start with one process/five threads. Use a pool at least as large as the thread count. Extra Puma workers have their own database pools and share durable state through SQLite. Use local disk, not a network filesystem, for the database and WAL files.
+Configuration: `DATABASE_PATH`, `UPLOAD_ROOT`, `HOST`, `PORT`, `MAX_THREADS` (5), `DB_POOL` (5), and `WEB_CONCURRENCY` (0). Use a pool at least as large as the thread count and local disk for SQLite/WAL. The reverse proxy must forward WebSocket upgrades and overwrite forwarded headers. Production cookies are secure; `DISABLE_SSL=true` is for deliberate local HTTP tests.
 
-Secure cookies are enabled in production. `DISABLE_SSL=true` is only for deliberate local HTTP testing. The reverse proxy should overwrite forwarded headers and apply upload limits. Uploads are capped at 25 MB, served only after room authorization, and use attachment disposition except for explicitly requested supported image previews.
+For Docker, set `SESSION_SECRET` and run `docker compose up --build`. The compose file binds port 9292 to loopback, persists data and starts the delivery worker. Docker deployment was not exercised in this workspace.
 
-For Docker, set `SESSION_SECRET`, then run `docker compose up --build`. The compose file binds port 9292 to loopback, shares a persistent volume, and starts the delivery worker after the web app becomes healthy. Docker build/start were not available for verification in this workspace.
+For Web Push, configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` for both web and worker processes, then enable notifications in a supported HTTPS browser. The included tests use fake delivery transports; actual push-provider delivery and OS-level PWA installation require a configured device.
 
-For Web Push, generate VAPID keys with the installed `web-push` gem and configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` (a `mailto:` contact URL) for the web and worker processes. Then enable notifications from Profile in a supported HTTPS browser. Notification preferences are in Room settings. The delivery tests use fake transports; actual push-provider delivery requires your keys and subscription.
+Webhook URLs are administrator-controlled and may target internal services, as in Campfire. Push subscriptions are restricted to the original provider allowlist and public IPs. Link previews reject private addresses and validate redirects. Outbound connections pin the checked IP while retaining TLS hostname validation.
 
-Webhook URLs are administrator-controlled and, like the Rails app, may point at internal services. Push subscription URLs must use HTTPS and resolve only to public IPs; connections pin the checked IP and retain TLS hostname verification. Neither path follows redirects. Jobs retry with backoff up to eight attempts; inspect the `jobs` table for exhausted jobs. Delivery is at-least-once. Text replies use deterministic client message IDs to avoid duplicate messages on a retry.
+Uploads are limited to 25 MB, message HTML to 100 KB, and passwords to 12–72 bytes. Sessions expire after 30 days. Jobs retry with backoff up to eight attempts; inspect `jobs` for exhausted attempts. Delivery is at-least-once, with deterministic bot reply IDs to avoid duplicates.
 
-Back up SQLite through its backup API, and back up `storage/files` and your secrets separately. Events and unattached files are retained; plan retention/cleanup for long-lived, high-volume installations.
+Back up SQLite through its backup API, alongside files and secrets. SQLite uses `synchronous=NORMAL`, so power failure can lose recent commits. Events and unattached files are retained; provide a retention policy for a long-lived installation.
 
 ## License
 
-[MIT](MIT-LICENSE). The source reference and reused benchmark HTTP client are copyright 37signals, LLC.
+[MIT](MIT-LICENSE). Original Campfire code/assets and the reused benchmark client are copyright 37signals, LLC. See [third-party notices](THIRD_PARTY_NOTICES.md).

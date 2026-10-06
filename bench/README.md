@@ -12,9 +12,9 @@ The seed command refuses to overwrite an existing database. The two runners snap
 
 ## In-process probe
 
-`message_hot_paths.rb` runs the actual Rack application with login and CSRF enabled. It records individual wall times, SQL counts, allocations, response bytes, and response SHA-256 fingerprints. Only randomized CSRF token values are normalized for fingerprint stability. It performs 20 warmup requests per path. There is no application cache to distinguish a cold/warm mode; these results describe warm Ruby and SQLite operation.
+`message_hot_paths.rb` runs the actual Rack application with login and CSRF enabled. It records individual wall times, SQL counts, allocations, response bytes, and response SHA-256 fingerprints. Only randomized CSRF token and CSP nonce values are normalized for fingerprint stability. It performs 20 warmup requests per path. There is no application cache to distinguish a cold/warm mode; these results describe warm Ruby and SQLite operation.
 
-The fanout probe encodes `{roomId: id}` once and emits it to 1,000 private stream names through a capturing adapter. It measures **fanout computation only**, not Web Push, polling, Redis, or network delivery. The production implementation uses the database feed and background queue instead of Action Cable.
+The fanout probe encodes `{roomId: id}` once and emits it to 1,000 private stream names through a capturing adapter. It measures **fanout computation only**, not Web Push, polling, Redis, or network delivery. The production implementation uses authenticated WebSockets backed by SQLite events, plus a background delivery queue.
 
 ## HTTP load
 
@@ -38,13 +38,13 @@ ruby bench/compare_http.rb --seed tmp/bench-matching-rails \
 
 This alternates baseline/Roda order each round and records response size, requests/sec, p50/p95/p99, errors, and statuses. It does not provision/reset a Rails server. For a fair comparison, prepare equivalent data, run both on the same machine with matching server/client CPU allocations and Ruby/JIT settings, and keep other traffic off both servers. The request client can become CPU-bound; report that alongside results.
 
-The HTML here is not byte-identical to Rails: the frontend has been replaced. Compare workload, records, authorization behavior, and response sizes as well as raw throughput. Do not compare local numbers to the upstream README's different hardware as if they were a controlled experiment. Neither a Rack timing nor its reciprocal is a measured HTTP throughput result.
+The original frontend is ported to native Erubi templates. The HTML is not byte-identical: independent helpers, signed URLs, whitespace and CSRF values differ. The live audit compares message element counts, frontend actions, reaction forms and frame IDs as well as content and authorization. Compare response sizes as well as raw throughput. Do not compare local numbers to the upstream README's different hardware as if they were a controlled experiment. Neither a Rack timing nor its reciprocal is a measured HTTP throughput result.
 
 JSON files default to ignored `bench/results/`. The implementation's SQL/index/concurrency invariants also run under `bundle exec rake test`.
 
 ## Reproduce the recorded Rails comparison
 
-The checked-in [`rails/run.rb`](rails/run.rb) provisions disposable Rails/Roda databases, production Puma servers, and a dedicated Redis process. Install Ruby 4.0, Redis (`redis-server` on `PATH`), libvips, and both locked bundles first. Run from this repository with the desired Ruby on `PATH`; use plain `ruby` for the orchestrator so it can select each app's bundle independently.
+The checked-in [`rails/run.rb`](rails/run.rb) provisions disposable Rails/Roda databases, production Puma servers, and a dedicated Redis process. Install Ruby 4.0, Redis (`redis-server` on `PATH`), libvips, FFmpeg, Poppler, and both locked bundles first. Run from this repository with the desired Ruby on `PATH`; use plain `ruby` for the orchestrator so it can select each app's bundle independently.
 
 ```sh
 bundle config set --local path vendor/bundle
@@ -64,8 +64,26 @@ ruby bench/rails/summarize.rb bench/results/rails-vs-roda-<timestamp>
 
 If the seed or checkout already exists, reuse it instead of recreating it. `RAILS_SOURCE` and `BENCH_SEED` override their paths; `REDIS_SERVER` overrides the Redis executable. `BENCH_ROUNDS` (positive/even), `BENCH_DURATION`, `BENCH_WARMUP`, and `BENCH_PREWARM` override timing defaults. Install the Rails bundle in its source checkout's `vendor/bundle` and the Roda bundle in this repository's `vendor/bundle`.
 
-The harness leaves the source checkout untouched, precompiles assets in a temporary copy, and preloads `ruby-vips` before the source image-security initializer. It uses native Active Record timestamp serialization, imports the Rails data through the Roda importer, compares all rows in eight fixture tables, and checks expected rendered message IDs before timing. The separate semantic audit compares text, formatting, authors, times, boosts, sidebars, writes, search updates, and access controls. Audit mutations never enter the timing fixture. All processes bind to loopback and are stopped on completion or failure.
+The harness leaves the source checkout untouched, precompiles assets in a temporary copy, and preloads `ruby-vips` before the source image-security initializer. It uses native Active Record timestamp serialization, imports the Rails data through the Roda importer, compares all rows in eight fixture tables, and checks expected rendered message IDs before timing. The separate semantic audit compares text, formatting, authors, times, boosts, DOM structure and controls, forms, sidebars, autocomplete, PWA endpoints, writes, search updates, and access controls. Audit mutations never enter the timing fixture. All processes bind to loopback and are stopped on completion or failure.
 
 Results include runtime/source metadata, a digest of Roda's runtime files, all round measurements, verification, server logs, and one-second process resource samples. The local Rails source is required only for this comparison, not for running the Roda app or its unit tests. The full audit is not included in ordinary CI because it requires both applications, libvips, and Redis.
 
-The completed comparison from 2026-10-06 is documented in [recorded performance](../docs/performance.md#live-rails-and-roda-comparison). Its [published evidence](recorded/2026-10-06/) includes all eight round result files, aggregate results, fixture verification, runtime metadata, and the 54-check behavior report. Full logs and process samples remain in the ignored local result directory. Local absolute paths, ephemeral server URLs, and fixture credentials are omitted from the published copies; measurements are unchanged.
+The current comparison is documented in [recorded performance](../docs/performance.md#live-rails-and-roda-comparison). The earlier partial-port results remain in `recorded/2026-10-06/` as historical evidence and are not the current frontend's results.
+
+## Browser and WebSocket audits
+
+Start a Puma server against a disposable seed (never the normal application database):
+
+```sh
+DATABASE_PATH=tmp/bench-seed/campfire.sqlite3 UPLOAD_ROOT=tmp/bench-seed/files PORT=9396 bundle exec puma -C config/puma.rb
+```
+
+In another terminal:
+
+```sh
+bundle exec ruby bench/verify_frontend.rb tmp/bench-seed/labels.json
+npm install --prefix tmp/browser-audit --no-audit --no-fund playwright-core
+node bench/verify_browser.mjs tmp/bench-seed/labels.json
+```
+
+The browser audit uses an installed Chrome executable. `CHROME_PATH`, `BASE_URL`, `PLAYWRIGHT_PATH` and `BROWSER_OUTPUT` override its paths. Browser tooling stays under `tmp`; it is not an application dependency. Both scripts require the disposable fixture marker and loopback HTTP. Browser reports and desktop/mobile screenshots are saved under `tmp/browser-audit/results`.

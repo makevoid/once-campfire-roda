@@ -1,0 +1,22 @@
+<li class="flex flex-column margin-none membership-item">
+  <span class="overflow-ellipsis txt-primary txt-undecorated">
+    <% agent = Campfire::UI::Platform.new(push_subscription.user_agent) %>
+    <strong><%= agent.browser.capitalize %> on <%= agent.operating_system %></strong><br>
+  </span>
+
+  <span class="flex align-start gap txt-small">
+    <span><%= push_subscription.endpoint %></span>
+
+    <span class="flex align-center gap">
+      <%= button_to "/users/me/push_subscriptions/#{push_subscription.id}/test_notifications", class: "btn btn--reversed" do %>
+        <%= image_tag "notification-bell-everything.svg", aria: { hidden: "true" }, size: 20 %>
+        <span class="for-screen-reader">Send test notification</span>
+      <% end %>
+
+      <%= button_to "/users/me/push_subscriptions/#{push_subscription.id}", method: :delete, class: "btn btn--negative" do %>
+        <%= image_tag "minus.svg", aria: { hidden: "true" }, size: 20 %>
+        <span class="for-screen-reader">Delete subscription</span>
+      <% end %>
+    </span>
+  </span>
+</li>

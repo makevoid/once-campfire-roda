@@ -2,7 +2,10 @@
 self.addEventListener("push", event => {
   if (!event.data) return;
   const payload = event.data.json();
-  event.waitUntil(self.registration.showNotification(payload.title, payload.options));
+  event.waitUntil(Promise.all([
+    self.registration.showNotification(payload.title, payload.options),
+    self.navigator.setAppBadge?.(payload.options?.data?.badge || 0)
+  ]));
 });
 self.addEventListener("notificationclick", event => {
   event.notification.close();

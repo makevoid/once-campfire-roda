@@ -7,47 +7,69 @@ module Campfire
 
       def user_routes(r)
         r.on "me" do
-          r.get("sidebar") { conditional_html(renderer.sidebar(repo.sidebar(@user))) }
+          r.get "sidebar" do
+            view = ui
+            data = repo.sidebar(@user)
+            assigns = view.context.sidebar(data)
+            # CSRF masks vary per render; validators instead include all sidebar
+            # records and user presentation timestamps, after authorization.
+            fingerprint = JSON.generate([@user.id, data, db[:users].max(:updated_at), repo.account[:updated_at]])
+            conditional_html(view.page("users/sidebars/show", assigns), fingerprint: fingerprint)
+          end
           r.on "push_subscriptions" do
             r.get(true) do
-              json({public_key: ENV["VAPID_PUBLIC_KEY"], subscriptions: db[:push_subscriptions].where(user_id: @user.id).select(:id, :user_agent).all})
+              rows = db[:push_subscriptions].where(user_id: @user.id).all
+              json({public_key: ENV["VAPID_PUBLIC_KEY"], subscriptions: rows.map { |row| row.slice(:id, :user_agent) }}) if wants_json?
+              ui.page("users/push_subscriptions/index", push_subscriptions: rows.map { |row| UI::Record.new(row) })
             end
             r.post(true) do
-              id = service.subscribe(@user, r.params["subscription"] || r.params, agent: r.user_agent)
+              id = service.subscribe(@user, r.params["push_subscription"] || r.params["subscription"] || r.params, agent: r.user_agent)
+              r.halt 200 if r.params["push_subscription"]
               json({id: id}, status: 201)
+            end
+            r.post Integer, "test_notifications" do |id|
+              raise Error.new("Subscription not found", 404) unless db[:push_subscriptions][id: id, user_id: @user.id]
+              JobQueue.new(db).enqueue("push_test", {subscription_id: id})
+              r.redirect "/users/me/push_subscriptions"
             end
             r.delete(Integer) do |id|
               db[:push_subscriptions].where(id: id, user_id: @user.id).delete
-              r.halt 204
+              r.halt 204 if wants_json?
+              r.redirect "/users/me/push_subscriptions"
             end
           end
           r.on "profile" do
             r.get(true) do
-              fields = [{label: "Name", name: "user[name]", value: @user[:name], required: true},
-                {label: "Email", name: "user[email_address]", type: "email", value: @user[:email_address]},
-                {label: "About you", name: "user[bio]", type: "textarea", value: @user[:bio]},
-                {label: "New password (optional; signs out all sessions)", name: "user[password]", type: "password"}]
-              extras = '<p><button type="button" id="enable-notifications">Enable notifications on this device</button></p>'
-              full_page("Profile", renderer.form(title: "Your profile", action: "/users/me/profile", method: "patch", csrf: csrf_token, fields: fields, extras: extras))
+              view = ui
+              memberships = view.context.memberships_for(@user.id).sort_by { |m| m.room.name.to_s.downcase }
+              direct, shared = memberships.partition { |m| m.room.direct? }
+              view.page("users/profiles/show", user: view.current.user, direct_memberships: direct, shared_memberships: shared)
             end
-            r.patch(true) { service.update_profile(@user, attributes("user")); r.redirect "/users/me/profile" }
+            r.patch(true) { update_profile }
+            r.put(true) { update_profile }
           end
         end
         r.on Integer do |id|
-          person = repo.user(id)
+          repo.user(id)
           r.get(true) do
-            content = %(<section class="panel"><h1>#{renderer.h(person[:name])}</h1><p>#{renderer.h(person[:bio])}</p><a href="/rooms/directs/new?user_id=#{id}">Start a direct message</a></section>)
-            if @user.administrator? && id != @user.id
-              content << renderer.form(title: person[:status] == 2 ? "Unban user" : "Ban user", action: "/users/#{id}/ban",
-                method: person[:status] == 2 ? "delete" : "post", csrf: csrf_token, fields: [], submit: person[:status] == 2 ? "Unban" : "Ban and remove messages")
-            end
-            full_page(person[:name], content)
+            view = ui
+            view.page("users/show", user: view.context.user(id))
           end
           r.on "ban" do
             r.post(true) { service.manage_user(@user, id, :ban); r.redirect "/users/#{id}" }
             r.delete(true) { service.manage_user(@user, id, :unban); r.redirect "/users/#{id}" }
           end
         end
+      end
+
+      def update_profile
+        attrs = attributes("user")
+        db.transaction(mode: :immediate) do
+          service.update_profile(@user, attrs)
+          container.media.replace("User", @user.id, "avatar", attrs["avatar"]) if attrs["avatar"]
+        end
+        session["flash"] = {"notice" => attrs["avatar"] ? "It may take up to 30 minutes to change everywhere." : "✓"}
+        request.redirect "/users/me/profile"
       end
     end
   end

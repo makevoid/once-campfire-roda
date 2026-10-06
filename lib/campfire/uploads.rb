@@ -19,7 +19,7 @@ module Campfire
       raise Error, "File needs a name" if name.empty?
       key = SecureRandom.hex(32)
       FileUtils.copy_file(file.path, path(key))
-      {key: key, filename: name, byte_size: file.size, content_type: image_type(path(key)) || "application/octet-stream"}
+      {key: key, filename: name, byte_size: file.size, content_type: content_type(path(key), name)}
     end
 
     def image_type(path)
@@ -29,6 +29,21 @@ module Campfire
       return "image/gif" if header.start_with?("GIF87a", "GIF89a")
       return "image/webp" if header.start_with?("RIFF") && header[8, 4] == "WEBP"
       nil
+    end
+
+    def content_type(path, filename)
+      type = image_type(path)
+      return type if type
+      header = File.binread(path, 64)
+      return "application/pdf" if header.start_with?("%PDF-")
+      if header[4, 4] == "ftyp"
+        return File.extname(filename).downcase == ".m4a" ? "audio/mp4" : "video/mp4"
+      end
+      return "video/webm" if header.start_with?("\x1a\x45\xdf\xa3".b)
+      return "audio/mpeg" if header.start_with?("ID3") || header.start_with?("\xff\xfb".b)
+      return "audio/ogg" if header.start_with?("OggS")
+      return "audio/wav" if header.start_with?("RIFF") && header[8, 4] == "WAVE"
+      "application/octet-stream"
     end
 
     def path(key)

@@ -1,0 +1,47 @@
+<%# Native Erubi markup. Keep the frontend controls in sync with messages/_template. %>
+<div class="message__actions" data-controller="soft-keyboard">
+  <details class="position-relative" data-controller="popup" data-action="keydown.esc->popup#close toggle->popup#toggle click@document->popup#closeOnClickOutside" data-popup-orientation-top-class="popup-orientation-top">
+    <summary class="btn message__action-btn message__options-btn">
+      <img src="<%= asset_path('menu-dots-horizontal.svg') %>" width="20" height="20" class="colorize--black" aria-hidden="true">
+      <span class="for-screen-reader">Message options</span>
+    </summary>
+    <div class="message__actions-menu border shadow" data-popup-target="menu">
+      <div class="quick-boosts">
+        <% reaction_choices.each do |character, title| %>
+          <form action="/messages/<%= message.id %>/boosts" method="post" data-turbo-frame="<%= dom_id(message, :boosting) %>" data-action="popup#close">
+            <input type="hidden" name="authenticity_token" value="<%= @csrf %>">
+            <input type="hidden" name="boost[content]" value="<%= character %>">
+            <button type="submit" name="button" title="<%= title %>" class="btn message__action-btn" data-emoji="<%= character %>">
+              <figure class="margin-none boost-character"><%= character %></figure>
+              <span class="for-screen-reader"><%= title %></span>
+            </button>
+          </form>
+        <% end %>
+        <a href="/messages/<%= message.id %>/boosts/new" class="btn message__action-btn message__boost-btn" data-turbo-frame="<%= dom_id(message, :new_boost) %>" data-action="soft-keyboard#open popup#close">
+          <img src="<%= asset_path('boost.svg') %>" class="colorize--black" width="20" height="20" aria-hidden="true">
+          <span class="for-screen-reader">New boost</span>
+        </a>
+      </div>
+      <div class="flex flex-wrap border-top margin-block-start-half pad-block-start-half message__actions-grid">
+        <% if message.content_type.attachment? %>
+          <a href="/attachments/<%= message.attachment.id %>" class="btn message__action-btn center full-width hide-in-ios-pwa" title="Download" aria-label="Download">
+            <img src="<%= asset_path('download.svg') %>" class="colorize--black" width="20" height="20" aria-hidden="true">
+          </a>
+          <button class="btn message__action-btn center full-width" data-controller="web-share" data-action="web-share#share" data-web-share-files-value="/attachments/<%= message.attachment.id %>?inline=1" data-web-share-title-value="<%= message.attachment.filename %>" title="Share" aria-label="Share">
+            <img src="<%= asset_path('share.svg') %>" class="colorize--black" width="20" height="20" aria-hidden="true">
+          </button>
+        <% else %>
+          <button class="btn message__action-btn center full-width" data-action="reply#reply" title="Reply" aria-label="Reply">
+            <img src="<%= asset_path('reply.svg') %>" class="colorize--black" width="20" height="20" aria-hidden="true">
+          </button>
+        <% end %>
+        <button class="btn message__action-btn center full-width" title="Copy link" aria-label="Copy link" data-controller="copy-to-clipboard" data-action="copy-to-clipboard#copy" data-copy-to-clipboard-success-class="btn--success" data-copy-to-clipboard-content-value="<%= url %>">
+          <img src="<%= asset_path('link.svg') %>" class="colorize--black" width="20" height="20" aria-hidden="true">
+        </button>
+        <a href="/rooms/<%= message.room.id %>/messages/<%= message.id %>/edit" class="btn message__action-btn center full-width message__edit-btn" data-turbo-frame="<%= dom_id(message, :edit) %>" title="Edit" aria-label="Edit">
+          <img src="<%= asset_path('pencil.svg') %>" class="colorize--black" width="20" height="20" aria-hidden="true">
+        </a>
+      </div>
+    </div>
+  </details>
+</div>
