@@ -47,7 +47,7 @@ The audit caught and fixed a Turbo frame ID mismatch. The browser audit also
 caught a missing HTML charset. These are examples of why comparing only visible
 message text was insufficient.
 
-The Roda tests include **68 tests / 511 assertions**. A separate live frontend audit
+The Roda tests include **70 tests / 526 assertions**. A separate live frontend audit
 passed **136 asset and WebSocket checks**. Headless Chrome exercised the editor,
 posting, reactions, Unicode, editing, search, profile and mobile layout, with no
 JavaScript errors in the successful run. Screenshots were inspected locally.

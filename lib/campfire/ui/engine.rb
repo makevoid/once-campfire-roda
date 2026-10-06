@@ -34,6 +34,7 @@ module Campfire
 
     class Engine
       ROOT = File.expand_path("../../../views/upstream", __dir__)
+      attr_reader :templates
 
       def initialize(root: ROOT)
         @templates = Module.new
@@ -46,10 +47,15 @@ module Campfire
 
       def render(view, name, locals = {}, partial: false, &block)
         keys = locals.keys.map(&:to_sym).sort
-        raise ArgumentError, "Invalid template locals" unless keys.all? { |key| key.to_s.match?(/\A[a-z_]\w*\z/) }
-        path = resolve(name, partial)
-        key = [path, keys]
-        method = @compiled[key] || @mutex.synchronize { @compiled[key] ||= compile(path, keys) }
+        # Resolve paths and validate local names once per compiled template shape.
+        key = [name.to_s, partial, keys]
+        method = @compiled[key] || @mutex.synchronize do
+          @compiled[key] ||= begin
+            raise ArgumentError, "Invalid template locals" unless keys.all? { |local| local.to_s.match?(/\A[a-z_]\w*\z/) }
+            key[0] = key[0].dup.freeze
+            compile(resolve(name, partial), keys)
+          end
+        end
         view.extend(@templates) unless view.is_a?(@templates)
         view.public_send(method, locals, &block)
       end

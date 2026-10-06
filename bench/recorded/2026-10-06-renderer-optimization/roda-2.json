@@ -1,0 +1,91 @@
+{
+  "client_ruby": "ruby 4.0.2 (2026-03-17 revision d3da9fec82) +YJIT +PRISM [arm64-darwin25]",
+  "options": {
+    "duration": 5.0,
+    "warmup": 2.0,
+    "rounds": 4,
+    "concurrencies": "16",
+    "paths": "room,messages,sidebar,search"
+  },
+  "fixture": {
+    "fixture": "campfire-roda-benchmark-v1",
+    "rooms.watercooler": 1,
+    "messages.busy_060": 1960,
+    "messages.count": 2000,
+    "users.count": 100
+  },
+  "results": {
+    "room_16": {
+      "path": "/rooms/1",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.265959999989718,
+      "rps": 110.33125963758448,
+      "ok": 581,
+      "statuses": {
+        "200": 581
+      },
+      "errors": 0,
+      "avg_bytes": 442317,
+      "latency_ms": {
+        "p50": 130.69099999847822,
+        "p95": 243.733000010252,
+        "p99": 405.8919999806676
+      }
+    },
+    "messages_16": {
+      "path": "/rooms/1/messages?before=1960",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.063924000016414,
+      "rps": 278.83514839389835,
+      "ok": 1412,
+      "statuses": {
+        "200": 1412
+      },
+      "errors": 0,
+      "avg_bytes": 417039,
+      "latency_ms": {
+        "p50": 53.22400000295602,
+        "p95": 76.08900000923313,
+        "p99": 108.43600000953302
+      }
+    },
+    "sidebar_16": {
+      "path": "/users/me/sidebar",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.02748300001258,
+      "rps": 432.8209563303456,
+      "ok": 2176,
+      "statuses": {
+        "200": 2176
+      },
+      "errors": 0,
+      "avg_bytes": 33354,
+      "latency_ms": {
+        "p50": 32.02000001328997,
+        "p95": 60.96800000523217,
+        "p99": 76.18800000636838
+      }
+    },
+    "search_16": {
+      "path": "/searches?q=coffee",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.125609000009717,
+      "rps": 112.76708777413654,
+      "ok": 578,
+      "statuses": {
+        "200": 578
+      },
+      "errors": 0,
+      "avg_bytes": 1057763,
+      "latency_ms": {
+        "p50": 128.64300000364892,
+        "p95": 196.00600001285784,
+        "p99": 211.0580000153277
+      }
+    }
+  }
+}

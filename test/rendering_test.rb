@@ -46,6 +46,19 @@ class RenderingTest < Minitest::Test
     refute Object.const_defined?(:ActionView)
   end
 
+  def test_shared_compiled_templates_keep_locals_and_partial_variants_separate
+    with_templates("page" => '<%= first %>:<%= second %>', "_page" => '<b><%= first %></b>') do |engine, _|
+      view_class = Class.new(View) { include engine.templates }
+      first, second = view_class.new(engine), view_class.new(engine)
+      assert_equal "one:two", engine.render(first, "page", {first: "one", second: "two"})
+      File.write(File.join(@templates, "page.html.erb"), "Changed after compilation")
+      assert_equal "&lt;three&gt;:four", engine.render(second, "page", {second: "four", first: "<three>"})
+      assert_equal "<b>five</b>", engine.render(first, "page", {first: "five"}, partial: true)
+      assert_raises(ArgumentError) { engine.render(second, "page", {"bad;key": "six"}) }
+      assert_raises(ArgumentError) { engine.render(second, "../page", {first: "six"}) }
+    end
+  end
+
   private
 
   def with_templates(templates)

@@ -1,7 +1,7 @@
 {
   "reference": "d2155e85a01b8439c32a3604ebb7f39fea1ace0f",
   "objective": "Port the Campfire application and frontend to independent Roda, Sequel and Erubi with no Rails Ruby dependencies.",
-  "benchmark_status": "Completed: four alternating rounds, 83,659 HTTP 200 responses, zero transport errors. See bench/recorded/2026-10-06-erubi.",
+  "benchmark_status": "Completed after renderer optimization: four alternating rounds, 93,754 HTTP 200 responses, zero transport errors. See bench/recorded/2026-10-06-erubi-optimized.",
   "work": [
     {
       "area": "Avatar/logo variants, custom styles, QR and session transfers",

@@ -74,6 +74,26 @@ class FrontendTest < CampfireTest
     refute_includes embed.to_html, "evil"
   end
 
+  def test_autolinks_respect_nested_markup_existing_links_and_code
+    message = post_message(admin, room, <<~HTML)
+      <p><strong>prefix</strong>www.example.com <em>mail&#64;example.org</em> &lt;safe&gt;</p>
+      <p><a href="https://existing.example/">https://existing.example/</a></p>
+      <pre><code>https://code.example/</code></pre><p><code>www.inline.example</code></p>
+      <p><em>https://one.example/</em> and https://two.example/.</p>
+    HTML
+    sign_in
+    get "/rooms/#{room.id}/messages/#{message[:id]}"
+    body = Nokogiri::HTML5(last_response.body).at_css("[data-reply-target=body]")
+    assert_equal ["http://www.example.com", "mailto:mail@example.org", "https://existing.example/", "https://one.example/", "https://two.example/"],
+      body.css("a").map { |link| link["href"] }
+    assert_empty body.css("a a, code a, pre a, safe")
+    assert_includes body.text, "<safe>"
+    assert_includes body.text, "https://two.example/."
+    get "/rooms/#{room.id}/messages/#{message[:id]}/edit"
+    editor = Nokogiri::HTML5(last_response.body).at_css("lexxy-editor")
+    assert_equal ["https://existing.example/"], Nokogiri::HTML5.fragment(editor["value"]).css("a").map { |link| link["href"] }
+  end
+
   def test_sound_and_room_refresh_render_turbo_content
     message = post_message(admin, room, "/play bell")
     sign_in

@@ -16,6 +16,8 @@ The seed command refuses to overwrite an existing database. The two runners snap
 
 The fanout probe encodes `{roomId: id}` once and emits it to 1,000 private stream names through a capturing adapter. It measures **fanout computation only**, not Web Push, polling, Redis, or network delivery. The production implementation uses authenticated WebSockets backed by SQLite events, plus a background delivery queue.
 
+The [renderer optimization report](../docs/renderer-optimization.md) includes component timings, before/after allocations, identical-output checks and a separate HTTP comparison against the previous Roda revision. Its recorded evidence also includes the temporary profiling drivers used.
+
 ## HTTP load
 
 By default `compare_http.rb` starts an isolated production Puma process on a random loopback port, with five threads, no cluster workers, a five-connection pool, and normal session/CSRF checks. It stops only the child server it started. Each client uses a persistent connection, disables compression, and consumes the response body. Warmup and measured requests must all be HTTP 200 without transport errors.

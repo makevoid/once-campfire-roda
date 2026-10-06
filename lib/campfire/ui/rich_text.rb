@@ -7,6 +7,7 @@ module Campfire
     class RichText
       EMBED_TYPE = "application/vnd.actiontext.opengraph-embed"
       MENTION_TYPE = "application/vnd.campfire.mention"
+      AUTOLINK_PATTERN = %r{https?://[^\s<>]+|\bwww\.[^\s<>]+|\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b}i
       Embed = Struct.new(:href, :url, :filename, :description) do
         def twitter_avatar? = url.to_s.start_with?("https://pbs.twimg.com/profile_images")
       end
@@ -14,8 +15,10 @@ module Campfire
       def initialize(view) = @view = view
 
       def render(body, editing: false, presentation: true)
-        fragment = Nokogiri::HTML5.fragment(body.to_s)
-        nodes = fragment.css("action-text-attachment")
+        source = body.to_s
+        fragment = Nokogiri::HTML5.fragment(source)
+        # Still parse and normalize every body; only skip an impossible embed lookup.
+        nodes = source.match?(/<action-text-attachment\b/i) ? fragment.css("action-text-attachment") : []
         remove_solo_unfurled_link(fragment, nodes) if presentation && !editing
         nodes.each do |node|
           html, type = attachment(node)
@@ -92,13 +95,13 @@ module Campfire
       end
 
       def autolink(fragment)
-        fragment.xpath(".//text()").each do |text|
-          next if text.ancestors.any? { |parent| %w[a pre code].include?(parent.name) }
+        fragment.traverse do |text|
+          next unless text.text?
           source = text.text
-          pattern = %r{https?://[^\s<>]+|\bwww\.[^\s<>]+|\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b}i
-          next unless source.match?(pattern)
+          next unless source.match?(AUTOLINK_PATTERN)
+          next if text.ancestors.any? { |parent| %w[a pre code].include?(parent.name) }
           html, previous = +"", 0
-          source.to_enum(:scan, pattern).each do
+          source.to_enum(:scan, AUTOLINK_PATTERN).each do
             match = Regexp.last_match
             value = match[0].sub(/[.,!?;:)]+\z/, "")
             html << CGI.escapeHTML(source[previous...match.begin(0)])

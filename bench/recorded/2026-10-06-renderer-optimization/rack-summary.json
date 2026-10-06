@@ -1,0 +1,74 @@
+{
+  "room": {
+    "normalized_html_identical": true,
+    "body_sha256": "6d2339d8b80238f6cf8edbad95476cf6fb6fd498c1150135e3f570a247f25dcb",
+    "before": {
+      "median_ms": 4.666000008000992,
+      "median_allocations": 28943.5,
+      "body_bytes": 442153.0,
+      "gc_fraction": 0.14783217672461246,
+      "queries": 11
+    },
+    "after": {
+      "median_ms": 3.4195000043837354,
+      "median_allocations": 23491.0,
+      "body_bytes": 442153.0,
+      "gc_fraction": 0.1068772121072621,
+      "queries": 11
+    }
+  },
+  "messages": {
+    "normalized_html_identical": true,
+    "body_sha256": "a144f2932136d4096e46e275afaf142036294fd0ddcbea966f3263efea6aed13",
+    "before": {
+      "median_ms": 3.794499993091449,
+      "median_allocations": 24306.5,
+      "body_bytes": 416879.0,
+      "gc_fraction": 0.15570783434858249,
+      "queries": 10
+    },
+    "after": {
+      "median_ms": 2.9320000030566007,
+      "median_allocations": 19051.0,
+      "body_bytes": 416879.0,
+      "gc_fraction": 0.10870016384828135,
+      "queries": 10
+    }
+  },
+  "sidebar": {
+    "normalized_html_identical": true,
+    "body_sha256": "8e750dd4278e3bc8f6f61da16b7f7ce28175d173098f62739dbabc438931c5ca",
+    "before": {
+      "median_ms": 1.375499996356666,
+      "median_allocations": 9977.0,
+      "body_bytes": 33354.0,
+      "gc_fraction": 0.13392215822321923,
+      "queries": 10
+    },
+    "after": {
+      "median_ms": 1.3330000074347481,
+      "median_allocations": 9475.0,
+      "body_bytes": 33354.0,
+      "gc_fraction": 0.117828925886047,
+      "queries": 10
+    }
+  },
+  "search": {
+    "normalized_html_identical": true,
+    "body_sha256": "a6389bf1d85c3b925815f08f8bbb33cb89fb062fd50c76c3ad2c97f3217cd656",
+    "before": {
+      "median_ms": 9.040499993716367,
+      "median_allocations": 58223.5,
+      "body_bytes": 1057363.0,
+      "gc_fraction": 0.18107871601869174,
+      "queries": 11
+    },
+    "after": {
+      "median_ms": 6.654500015429221,
+      "median_allocations": 44775.5,
+      "body_bytes": 1057363.0,
+      "gc_fraction": 0.125529002898769,
+      "queries": 11
+    }
+  }
+}

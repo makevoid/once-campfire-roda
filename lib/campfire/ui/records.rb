@@ -176,6 +176,7 @@ module Campfire
     Variant = Data.define(:file, :name)
 
     class Context
+      Current = Data.define(:user, :account)
       attr_reader :container, :current
 
       def initialize(container, actor, page: nil)
@@ -183,7 +184,7 @@ module Campfire
         @users, @rooms, @messages, @boosts, @attachments, @media = {}, {}, {}, {}, {}, {}
         @users[actor.id] = User.new(actor.attributes, self) if actor
         account = container.repo.account
-        @current = Struct.new(:user, :account).new(actor && @users[actor.id], account && Account.new(account, self))
+        @current = Current.new(actor && @users[actor.id], account && Account.new(account, self))
         load_page(page) if page
       end
 

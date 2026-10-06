@@ -1,0 +1,91 @@
+{
+  "client_ruby": "ruby 4.0.2 (2026-03-17 revision d3da9fec82) +YJIT +PRISM [arm64-darwin25]",
+  "options": {
+    "duration": 5.0,
+    "warmup": 2.0,
+    "rounds": 4,
+    "concurrencies": "16",
+    "paths": "room,messages,sidebar,search"
+  },
+  "fixture": {
+    "fixture": "campfire-roda-benchmark-v1",
+    "rooms.watercooler": 1,
+    "messages.busy_060": 1960,
+    "messages.count": 2000,
+    "users.count": 100
+  },
+  "results": {
+    "room_16": {
+      "path": "/rooms/1",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.065617999993265,
+      "rps": 216.3605704183492,
+      "ok": 1096,
+      "statuses": {
+        "200": 1096
+      },
+      "errors": 0,
+      "avg_bytes": 442317,
+      "latency_ms": {
+        "p50": 70.1460000127554,
+        "p95": 89.46700001251884,
+        "p99": 127.1710000000894
+      }
+    },
+    "messages_16": {
+      "path": "/rooms/1/messages?before=1960",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.067983999993885,
+      "rps": 279.79567417768305,
+      "ok": 1418,
+      "statuses": {
+        "200": 1418
+      },
+      "errors": 0,
+      "avg_bytes": 417039,
+      "latency_ms": {
+        "p50": 55.96499997773208,
+        "p95": 64.92299999808893,
+        "p99": 74.01599999866448
+      }
+    },
+    "sidebar_16": {
+      "path": "/users/me/sidebar",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.05327999999281,
+      "rps": 681.7354272878015,
+      "ok": 3445,
+      "statuses": {
+        "200": 3445
+      },
+      "errors": 0,
+      "avg_bytes": 33354,
+      "latency_ms": {
+        "p50": 22.84200000576675,
+        "p95": 25.507000013021752,
+        "p99": 42.7239999989979
+      }
+    },
+    "search_16": {
+      "path": "/searches?q=coffee",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.280431999999564,
+      "rps": 60.41172388926253,
+      "ok": 319,
+      "statuses": {
+        "200": 319
+      },
+      "errors": 0,
+      "avg_bytes": 1057763,
+      "latency_ms": {
+        "p50": 264.4960000179708,
+        "p95": 382.51100000343286,
+        "p99": 418.0369999958202
+      }
+    }
+  }
+}

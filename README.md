@@ -19,36 +19,37 @@
   <tbody>
     <tr>
       <td>Room (40 messages)</td>
-      <td align="right">179</td>
-      <td align="right"><strong>217</strong></td>
-      <td align="right"><strong>1.21×</strong></td>
+      <td align="right">174</td>
+      <td align="right"><strong>288</strong></td>
+      <td align="right"><strong>1.65×</strong></td>
     </tr>
     <tr>
       <td>Earlier messages (40)</td>
-      <td align="right">283</td>
-      <td align="right"><strong>275</strong></td>
-      <td align="right"><strong>0.97×</strong></td>
+      <td align="right">278</td>
+      <td align="right"><strong>344</strong></td>
+      <td align="right"><strong>1.24×</strong></td>
     </tr>
     <tr>
       <td>Sidebar</td>
-      <td align="right">294</td>
-      <td align="right"><strong>644</strong></td>
-      <td align="right"><strong>2.19×</strong></td>
+      <td align="right">299</td>
+      <td align="right"><strong>736</strong></td>
+      <td align="right"><strong>2.46×</strong></td>
     </tr>
     <tr>
       <td>Search (100 matches)</td>
-      <td align="right">122</td>
-      <td align="right"><strong>114</strong></td>
-      <td align="right"><strong>0.93×</strong></td>
+      <td align="right">131</td>
+      <td align="right"><strong>152</strong></td>
+      <td align="right"><strong>1.17×</strong></td>
     </tr>
   </tbody>
 </table>
 
 <p align="center">
-  <strong>83,659 successful requests · Zero errors</strong><br>
-  Measured 2026-10-06 ·
+  <strong>93,754 successful requests · Zero errors</strong><br>
+  Measured 2026-10-06 · Substantial round-to-round variation; see detailed ranges.<br>
   <a href="docs/performance.md#live-rails-and-roda-comparison">Detailed results &amp; methodology</a> ·
-  <a href="bench/recorded/2026-10-06-erubi/">Recorded measurements</a>
+  <a href="bench/recorded/2026-10-06-erubi-optimized/">Recorded measurements</a> ·
+  <a href="docs/renderer-optimization.md">Renderer profiling</a>
 </p>
 
 ---
@@ -107,11 +108,11 @@ bundle exec ruby bench/message_hot_paths.rb --seed tmp/bench-seed
 ruby bench/compare_http.rb --seed tmp/bench-seed --duration 10 --rounds 2
 ```
 
-Validation: **68 tests / 511 assertions**, **83 live Rails/Roda checks**, **136 live frontend/WebSocket checks**, plus a successful desktop/mobile Chrome interaction audit. Checks cover full message structure and controls, named forms, writes/search updates, CSRF, ownership and private-room isolation. The Ruby suite also asserts that no Rails gems or ActiveSupport/Action View constants are loaded.
+Validation: **70 tests / 526 assertions**, **83 live Rails/Roda checks**, **136 live frontend/WebSocket checks**, plus a successful desktop/mobile Chrome interaction audit. Checks cover full message structure and controls, named forms, writes/search updates, CSRF, ownership and private-room isolation. The Ruby suite also asserts that no Rails gems or ActiveSupport/Action View constants are loaded.
 
-The final comparison uses 2,000 messages, 100 users, 20 rooms, 1,216 memberships and 400 boosts. Both apps use Ruby 4.0.2 with YJIT, one five-thread Puma and matching imported data. Rails keeps its production Redis cache; Roda renders without fragment caching. Four alternating rounds are retained, including timing variation. The supplied Rails HTTP client is unchanged.
+The current comparison uses 2,000 messages, 100 users, 20 rooms, 1,216 memberships and 400 boosts. Both apps use Ruby 4.0.2 with YJIT, one five-thread Puma and matching imported data. Rails keeps its production Redis cache; Roda renders without fragment caching. Four alternating rounds are retained, including timing variation. The supplied Rails HTTP client is unchanged.
 
-See [measurements and methodology](docs/performance.md#live-rails-and-roda-comparison), [raw results](bench/recorded/2026-10-06-erubi/), and [reproduction instructions](bench/README.md#reproduce-the-recorded-rails-comparison). Earlier minimal-frontend measurements are preserved as [historical results](docs/performance-partial-port.md).
+See [measurements and methodology](docs/performance.md#live-rails-and-roda-comparison), [raw results](bench/recorded/2026-10-06-erubi-optimized/), and [reproduction instructions](bench/README.md#reproduce-the-recorded-rails-comparison). Earlier minimal-frontend measurements are preserved as [historical results](docs/performance-partial-port.md).
 
 ## Import Rails data
 

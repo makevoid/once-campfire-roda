@@ -1,0 +1,91 @@
+{
+  "client_ruby": "ruby 4.0.2 (2026-03-17 revision d3da9fec82) +YJIT +PRISM [arm64-darwin25]",
+  "options": {
+    "duration": 5.0,
+    "warmup": 2.0,
+    "rounds": 4,
+    "concurrencies": "16",
+    "paths": "room,messages,sidebar,search"
+  },
+  "fixture": {
+    "fixture": "campfire-roda-benchmark-v1",
+    "rooms.watercooler": 1,
+    "messages.busy_060": 1960,
+    "messages.count": 2000,
+    "users.count": 100
+  },
+  "results": {
+    "room_16": {
+      "path": "/rooms/1",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.07192399998894,
+      "rps": 197.95249297942743,
+      "ok": 1004,
+      "statuses": {
+        "200": 1004
+      },
+      "errors": 0,
+      "avg_bytes": 442317,
+      "latency_ms": {
+        "p50": 71.40099999378435,
+        "p95": 146.92099997773767,
+        "p99": 251.25100000877865
+      }
+    },
+    "messages_16": {
+      "path": "/rooms/1/messages?before=1960",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.053324000007706,
+      "rps": 249.14294036916695,
+      "ok": 1259,
+      "statuses": {
+        "200": 1259
+      },
+      "errors": 0,
+      "avg_bytes": 417039,
+      "latency_ms": {
+        "p50": 57.08599998615682,
+        "p95": 107.39700001431629,
+        "p99": 117.7229999739211
+      }
+    },
+    "sidebar_16": {
+      "path": "/users/me/sidebar",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.025055999984033,
+      "rps": 674.42034477044,
+      "ok": 3389,
+      "statuses": {
+        "200": 3389
+      },
+      "errors": 0,
+      "avg_bytes": 33354,
+      "latency_ms": {
+        "p50": 23.083000007318333,
+        "p95": 27.348000003257766,
+        "p99": 52.46399997849949
+      }
+    },
+    "search_16": {
+      "path": "/searches?q=coffee",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.09289900001022,
+      "rps": 153.74347694671124,
+      "ok": 783,
+      "statuses": {
+        "200": 783
+      },
+      "errors": 0,
+      "avg_bytes": 1057763,
+      "latency_ms": {
+        "p50": 100.81000000354834,
+        "p95": 113.81999999866821,
+        "p99": 172.0109999878332
+      }
+    }
+  }
+}

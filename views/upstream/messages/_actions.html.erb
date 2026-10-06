@@ -1,5 +1,5 @@
 <%# Native Erubi markup. Keep the frontend controls in sync with messages/_template. %>
-<div class="message__actions" data-controller="soft-keyboard">
+<% boosting_id = dom_id(message, :boosting) %><div class="message__actions" data-controller="soft-keyboard">
   <details class="position-relative" data-controller="popup" data-action="keydown.esc->popup#close toggle->popup#toggle click@document->popup#closeOnClickOutside" data-popup-orientation-top-class="popup-orientation-top">
     <summary class="btn message__action-btn message__options-btn">
       <img src="<%= asset_path('menu-dots-horizontal.svg') %>" width="20" height="20" class="colorize--black" aria-hidden="true">
@@ -8,7 +8,7 @@
     <div class="message__actions-menu border shadow" data-popup-target="menu">
       <div class="quick-boosts">
         <% reaction_choices.each do |character, title| %>
-          <form action="/messages/<%= message.id %>/boosts" method="post" data-turbo-frame="<%= dom_id(message, :boosting) %>" data-action="popup#close">
+          <form action="/messages/<%= message.id %>/boosts" method="post" data-turbo-frame="<%= boosting_id %>" data-action="popup#close">
             <input type="hidden" name="authenticity_token" value="<%= @csrf %>">
             <input type="hidden" name="boost[content]" value="<%= character %>">
             <button type="submit" name="button" title="<%= title %>" class="btn message__action-btn" data-emoji="<%= character %>">

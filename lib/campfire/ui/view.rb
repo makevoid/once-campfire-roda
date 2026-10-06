@@ -26,6 +26,8 @@ module Campfire
       include TranslationsHelpers
       include MessagesHelpers
       ENGINE = Engine.new
+      # Share compiled methods without allocating a singleton class per request.
+      include ENGINE.templates
       attr_reader :context, :request, :current
 
       def initialize(container:, actor:, request:, csrf:, nonce:, page: nil, flash: {}, last_room_id: nil)

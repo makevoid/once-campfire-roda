@@ -2,37 +2,39 @@
 
 ## Live Rails and Roda comparison
 
-**Rails (Active Record + Action View) versus Roda (Sequel + Erubi), with the original Campfire frontend and matching data.** Measured on 2026-10-06 after the full frontend port and native template refactor.
+**Rails (Active Record + Action View) versus Roda (Sequel + Erubi), with the original Campfire frontend and matching data.** Measured on 2026-10-06 after the [renderer optimizations](renderer-optimization.md).
 
-All **83,659 measured requests returned HTTP 200**, with zero transport errors. The table uses medians of four alternating rounds; ratios use unrounded medians. Latency columns are medians of per-round percentiles, not pooled percentiles.
+All **93,754 measured requests returned HTTP 200**, with zero transport errors. The table uses medians of four alternating rounds; ratios use unrounded medians. Latency columns are medians of per-round percentiles, not pooled percentiles.
 
 | Workload | Clients | Rails req/s | Roda req/s | Roda / Rails | p50 ms, Rails / Roda | p95 ms, Rails / Roda |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Room (40 messages) | 1 | 203 | 203 | 1.00× | 4.77 / 4.69 | 6.13 / 6.32 |
-| Room (40 messages) | 16 | 179 | 217 | 1.21× | 86.92 / 71.68 | 111.92 / 88.01 |
-| Earlier messages (40) | 1 | 366 | 235 | 0.64× | 2.63 / 4.03 | 3.41 / 5.84 |
-| Earlier messages (40) | 16 | 283 | 275 | 0.97× | 52.61 / 57.29 | 83.84 / 66.05 |
-| Sidebar | 1 | 282 | 614 | 2.17× | 3.40 / 1.54 | 4.45 / 2.35 |
-| Sidebar | 16 | 294 | 644 | 2.19× | 53.29 / 24.67 | 64.83 / 27.25 |
-| Search (100 matches) | 1 | 154 | 110 | 0.71× | 6.42 / 8.86 | 7.58 / 10.50 |
-| Search (100 matches) | 16 | 122 | 114 | 0.93× | 128.07 / 138.85 | 150.36 / 155.62 |
+| Room (40 messages) | 1 | 201 | 263 | 1.31× | 4.87 / 3.59 | 6.16 / 5.74 |
+| Room (40 messages) | 16 | 174 | 288 | 1.65× | 91.51 / 55.23 | 109.35 / 60.37 |
+| Earlier messages (40) | 1 | 324 | 339 | 1.05× | 2.72 / 2.87 | 4.68 / 4.01 |
+| Earlier messages (40) | 16 | 278 | 344 | 1.24× | 57.07 / 46.01 | 66.60 / 52.70 |
+| Sidebar | 1 | 266 | 657 | 2.47× | 3.68 / 1.37 | 5.17 / 2.35 |
+| Sidebar | 16 | 299 | 736 | 2.46× | 52.13 / 21.34 | 65.29 / 24.51 |
+| Search (100 matches) | 1 | 148 | 151 | 1.02× | 6.12 / 6.55 | 7.54 / 7.61 |
+| Search (100 matches) | 16 | 131 | 152 | 1.17× | 118.48 / 103.12 | 139.99 / 117.16 |
 
 | Workload | Rails response bytes | Roda response bytes | Rails req/s range, 16 clients | Roda req/s range, 16 clients |
 | --- | ---: | ---: | ---: | ---: |
-| Room (40 messages) | 457,915 | 442,317 | 92–203 | 160–235 |
-| Earlier messages (40) | 424,623 | 417,039 | 265–313 | 236–288 |
-| Sidebar | 41,441 | 33,354 | 233–312 | 592–708 |
-| Search (100 matches) | 1,084,451 | 1,057,763 | 104–131 | 103–117 |
+| Room (40 messages) | 457,915 | 442,317 | 66–206 | 265–314 |
+| Earlier messages (40) | 424,623 | 417,039 | 158–316 | 291–369 |
+| Sidebar | 41,441 | 33,354 | 211–319 | 700–793 |
+| Search (100 matches) | 1,084,451 | 1,057,763 | 118–137 | 124–165 |
 
-The full frontend has changed the comparison substantially. The previous 8–10× figures came from a much smaller, minimal renderer. They are retained only in the [historical report](performance-partial-port.md). The current table includes all workloads and every round, including cases where Rails is faster.
+The [renderer profiling report](renderer-optimization.md) compares the optimized Roda renderer with the previous revision. The [first full-frontend comparison](../bench/recorded/2026-10-06-erubi/) remains available.
+
+The full frontend has changed the comparison substantially. The previous 8–10× figures came from a much smaller, minimal renderer. They are retained only in the [historical report](performance-partial-port.md). The current table includes all workloads and every round, without excluding slower or noisy rounds.
 
 ## Matched workload and verification
 
 Both apps serve 40 room messages, 40 earlier messages, the same sidebar records and 100 search matches from equivalent fixtures: 2,000 messages, 100 users, 20 rooms, 1,216 memberships and 400 boosts. The timed fixture has no attachments. Each message includes the original actions, eight reaction forms, avatars, boost controls and Turbo frames. Roda renders these independently with Erubi. Whitespace, signed URLs, generated attributes and asset-loading tags account for remaining byte differences.
 
-Before timing, a separate disposable run passed **83 differential HTTP checks**. These compare content, message element counts, frontend actions, reaction values, Turbo frame IDs, form fields, autocomplete, PWA endpoints, writes, search updates, ownership, CSRF and private-room isolation. The audit and benchmark have identical recorded runtime digests. See [coverage](compatibility.md) and the [individual checks](../bench/recorded/2026-10-06-erubi/parity.json).
+Before timing, a separate disposable run passed **83 differential HTTP checks**. These compare content, message element counts, frontend actions, reaction values, Turbo frame IDs, form fields, autocomplete, PWA endpoints, writes, search updates, ownership, CSRF and private-room isolation. The audit and benchmark have identical recorded runtime digests. See [coverage](compatibility.md) and the [individual checks](../bench/recorded/2026-10-06-erubi-optimized/parity.json).
 
-The Ruby suite passed **68 tests / 511 assertions**. Additional validation includes **136 live asset/WebSocket checks** and desktop/mobile Chrome interaction checks. Real push-provider delivery, OS-level PWA installation and other browser engines were not exercised.
+The Ruby suite passed **70 tests / 526 assertions**. The preceding frontend port also passed **136 live asset/WebSocket checks** and desktop/mobile Chrome interaction checks; this optimization rerun checks the rendered output, Ruby suite and live Rails/Roda parity. Real push-provider delivery, OS-level PWA installation and other browser engines were not exercised.
 
 ## Method
 
@@ -54,14 +56,14 @@ One-second process samples report the following maxima. CPU percentages use 100%
 
 | Process | Peak CPU | Peak RSS |
 | --- | ---: | ---: |
-| Rails | 123.2% | 443.3 MiB |
-| Roda | 101.5% | 254.5 MiB |
-| Redis | 1.8% | 6.1 MiB |
-| Client | 9.7% | 415.8 MiB |
+| Rails | 126.1% | 434.6 MiB |
+| Roda | 100.7% | 211.8 MiB |
+| Redis | 1.7% | 6.5 MiB |
+| Client | 8.6% | 315.5 MiB |
 
 ## Reproduce and interpret
 
-[Reproduction commands](../bench/README.md#reproduce-the-recorded-rails-comparison) run `bench/rails/run.rb` and `bench/rails/summarize.rb`. [Published evidence](../bench/recorded/2026-10-06-erubi/) includes all eight round files, p99 values, counts, verification, runtime metadata and the live audit. Local paths, temporary server URLs and fixture credentials are removed from published copies; measurements are unchanged. Full logs/process samples remain locally in `bench/results/rails-vs-roda-20261006-024502/`.
+[Reproduction commands](../bench/README.md#reproduce-the-recorded-rails-comparison) run `bench/rails/run.rb` and `bench/rails/summarize.rb`. [Published evidence](../bench/recorded/2026-10-06-erubi-optimized/) includes all eight round files, p99 values, counts, verification, runtime metadata and the live audit. Local paths, temporary server URLs and fixture credentials are removed from published copies; measurements are unchanged. Full logs/process samples remain locally in `bench/results/rails-vs-roda-20261006-032339/`.
 
 Runtime metadata lists the files used for the SHA-256 digest. The hidden asset manifest has a separate recorded SHA-256. To reproduce the runtime digest, append each listed relative filename, a NUL, its file bytes and a NUL, in the recorded order.
 

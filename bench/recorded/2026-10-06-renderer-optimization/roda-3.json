@@ -1,0 +1,91 @@
+{
+  "client_ruby": "ruby 4.0.2 (2026-03-17 revision d3da9fec82) +YJIT +PRISM [arm64-darwin25]",
+  "options": {
+    "duration": 5.0,
+    "warmup": 2.0,
+    "rounds": 4,
+    "concurrencies": "16",
+    "paths": "room,messages,sidebar,search"
+  },
+  "fixture": {
+    "fixture": "campfire-roda-benchmark-v1",
+    "rooms.watercooler": 1,
+    "messages.busy_060": 1960,
+    "messages.count": 2000,
+    "users.count": 100
+  },
+  "results": {
+    "room_16": {
+      "path": "/rooms/1",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.052758000005269,
+      "rps": 222.4527673794842,
+      "ok": 1124,
+      "statuses": {
+        "200": 1124
+      },
+      "errors": 0,
+      "avg_bytes": 442317,
+      "latency_ms": {
+        "p50": 65.06199997966178,
+        "p95": 112.74400001275353,
+        "p99": 133.84600001154467
+      }
+    },
+    "messages_16": {
+      "path": "/rooms/1/messages?before=1960",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.043559000012465,
+      "rps": 322.98620874584276,
+      "ok": 1629,
+      "statuses": {
+        "200": 1629
+      },
+      "errors": 0,
+      "avg_bytes": 417039,
+      "latency_ms": {
+        "p50": 48.74900000868365,
+        "p95": 56.95100000593811,
+        "p99": 64.56500000786036
+      }
+    },
+    "sidebar_16": {
+      "path": "/users/me/sidebar",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.023335000005318,
+      "rps": 676.0448984581767,
+      "ok": 3396,
+      "statuses": {
+        "200": 3396
+      },
+      "errors": 0,
+      "avg_bytes": 33354,
+      "latency_ms": {
+        "p50": 23.63000001059845,
+        "p95": 26.526000001467764,
+        "p99": 28.261999977985397
+      }
+    },
+    "search_16": {
+      "path": "/searches?q=coffee",
+      "conc": 16,
+      "gzip": false,
+      "secs": 5.110436999995727,
+      "rps": 140.8881471390024,
+      "ok": 720,
+      "statuses": {
+        "200": 720
+      },
+      "errors": 0,
+      "avg_bytes": 1057763,
+      "latency_ms": {
+        "p50": 113.2999999972526,
+        "p95": 122.37900000764057,
+        "p99": 133.45100000151433
+      }
+    }
+  }
+}
