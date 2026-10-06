@@ -34,7 +34,11 @@ rows = sides.fetch('roda').first.fetch('results').keys.map do |key|
 end
 resources = JSON.parse(File.read(File.join(folder, 'resources.json')))
 usage = resources.fetch('pids').to_h do |name, pid|
-  samples = resources.fetch('samples').flat_map { |s| s.fetch('processes') }.select { |p| p.fetch('pid') == pid }
+  samples = if resources.fetch('samples').first&.key?('groups')
+    resources.fetch('samples').map { |s| s.fetch('groups').fetch(name) }
+  else
+    resources.fetch('samples').flat_map { |s| s.fetch('processes') }.select { |p| p.fetch('pid') == pid }
+  end
   [name, {max_cpu_percent: samples.map { |p| p.fetch('cpu_percent') }.max, max_rss_mib: samples.map { |p| p.fetch('rss_kib') / 1024.0 }.max}]
 end
 summary = {aggregation: "Median of #{sides.fetch('roda').length} per-round measurements; percentile medians are not pooled percentiles.", workloads: rows, resources: usage}

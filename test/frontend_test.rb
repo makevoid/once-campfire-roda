@@ -107,4 +107,17 @@ class FrontendTest < CampfireTest
     follow_redirect!
     assert Nokogiri::HTML5(last_response.body).at_css("#involvement_room_#{room.id} button.nothing")
   end
+
+  def test_profile_can_restore_notifications_for_a_hidden_direct_chat
+    direct = service.create_room(admin, {}, type: "Rooms::Direct", user_ids: [member.id])
+    sign_in
+    mutate(:put, "/rooms/#{direct.id}/involvement", {involvement: "invisible"})
+    get "/users/me/profile"
+    assert_equal 200, last_response.status
+    frame = Nokogiri::HTML5(last_response.body).at_css("#involvement_room_#{direct.id}")
+    assert frame.at_css("button.invisible")
+    assert_equal "/rooms/#{direct.id}/involvement?involvement=everything", frame.at_css("form")["action"]
+    mutate(:put, "/rooms/#{direct.id}/involvement", {involvement: "everything"})
+    assert_equal "everything", db[:memberships][room_id: direct.id, user_id: admin.id][:involvement]
+  end
 end

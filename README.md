@@ -3,8 +3,8 @@
 <h2 align="center">Rails vs. Roda benchmarks</h2>
 
 <p align="center">
-  <strong>16 concurrent clients · Median of 4 rounds · Requests per second</strong><br>
-  Ruby 4.0.2 + YJIT · Five-thread Puma · Matching 2,000-message fixtures
+  <strong>64 concurrent clients · Median of 4 rounds · Requests per second</strong><br>
+  Ruby 4.0.2 + YJIT · Puma: 8 workers × 2 threads · Matching 2,000-message fixtures
 </p>
 
 <table align="center">
@@ -19,36 +19,37 @@
   <tbody>
     <tr>
       <td>Room (40 messages)</td>
-      <td align="right">174</td>
-      <td align="right"><strong>288</strong></td>
-      <td align="right"><strong>1.65×</strong></td>
+      <td align="right">725</td>
+      <td align="right"><strong>1,221</strong></td>
+      <td align="right"><strong>1.69×</strong></td>
     </tr>
     <tr>
       <td>Earlier messages (40)</td>
-      <td align="right">278</td>
-      <td align="right"><strong>344</strong></td>
-      <td align="right"><strong>1.24×</strong></td>
+      <td align="right">1,014</td>
+      <td align="right"><strong>1,538</strong></td>
+      <td align="right"><strong>1.52×</strong></td>
     </tr>
     <tr>
       <td>Sidebar</td>
-      <td align="right">299</td>
-      <td align="right"><strong>736</strong></td>
-      <td align="right"><strong>2.46×</strong></td>
+      <td align="right">969</td>
+      <td align="right"><strong>3,174</strong></td>
+      <td align="right"><strong>3.28×</strong></td>
     </tr>
     <tr>
       <td>Search (100 matches)</td>
-      <td align="right">131</td>
-      <td align="right"><strong>152</strong></td>
-      <td align="right"><strong>1.17×</strong></td>
+      <td align="right">476</td>
+      <td align="right"><strong>701</strong></td>
+      <td align="right"><strong>1.47×</strong></td>
     </tr>
   </tbody>
 </table>
 
 <p align="center">
-  <strong>93,754 successful requests · Zero errors</strong><br>
+  <strong>390,008 successful requests · Zero errors</strong><br>
   Measured 2026-10-06 · Substantial round-to-round variation; see detailed ranges.<br>
   <a href="docs/performance.md#live-rails-and-roda-comparison">Detailed results &amp; methodology</a> ·
-  <a href="bench/recorded/2026-10-06-erubi-optimized/">Recorded measurements</a> ·
+  <a href="bench/recorded/2026-10-06-puma-cluster/">Recorded measurements</a> ·
+  <a href="docs/puma-tuning.md">Puma tuning</a> ·
   <a href="docs/renderer-optimization.md">Renderer profiling</a>
 </p>
 
@@ -108,11 +109,11 @@ bundle exec ruby bench/message_hot_paths.rb --seed tmp/bench-seed
 ruby bench/compare_http.rb --seed tmp/bench-seed --duration 10 --rounds 2
 ```
 
-Validation: **70 tests / 526 assertions**, **83 live Rails/Roda checks**, **136 live frontend/WebSocket checks**, plus a successful desktop/mobile Chrome interaction audit. Checks cover full message structure and controls, named forms, writes/search updates, CSRF, ownership and private-room isolation. The Ruby suite also asserts that no Rails gems or ActiveSupport/Action View constants are loaded.
+Validation: **74 tests / 557 assertions**, **83 live Rails/Roda checks**, **136 live frontend/WebSocket checks**, plus a successful desktop/mobile Chrome interaction audit. Checks cover full message structure and controls, named forms, writes/search updates, CSRF, ownership and private-room isolation. The Ruby suite also asserts that no Rails gems or ActiveSupport/Action View constants are loaded.
 
-The current comparison uses 2,000 messages, 100 users, 20 rooms, 1,216 memberships and 400 boosts. Both apps use Ruby 4.0.2 with YJIT, one five-thread Puma and matching imported data. Rails keeps its production Redis cache; Roda renders without fragment caching. Four alternating rounds are retained, including timing variation. The supplied Rails HTTP client is unchanged.
+The current comparison uses 2,000 messages, 100 users, 20 rooms, 1,216 memberships and 400 boosts. Both apps use Ruby 4.0.2 with YJIT, eight Puma workers with two threads each and matching imported data. Rails keeps its production Redis cache; Roda renders without fragment caching. Four alternating rounds are retained, including timing variation. Two load-generator processes divide the total client concurrency. The supplied Rails HTTP request code is unchanged.
 
-See [measurements and methodology](docs/performance.md#live-rails-and-roda-comparison), [raw results](bench/recorded/2026-10-06-erubi-optimized/), and [reproduction instructions](bench/README.md#reproduce-the-recorded-rails-comparison). Earlier minimal-frontend measurements are preserved as [historical results](docs/performance-partial-port.md).
+See [measurements and methodology](docs/performance.md#live-rails-and-roda-comparison), [raw results](bench/recorded/2026-10-06-puma-cluster/), and [reproduction instructions](bench/README.md#reproduce-the-recorded-rails-comparison). The [previous single-process comparison](docs/performance-single-process.md) is retained. Earlier minimal-frontend measurements are preserved as [historical results](docs/performance-partial-port.md).
 
 ## Import Rails data
 
@@ -138,7 +139,9 @@ export SESSION_SECRET="$(ruby -rsecurerandom -e 'print SecureRandom.hex(64)')"
 RACK_ENV=production HOST=127.0.0.1 PORT=9292 bundle exec puma -C config/puma.rb
 ```
 
-Configuration: `DATABASE_PATH`, `UPLOAD_ROOT`, `HOST`, `PORT`, `MAX_THREADS` (5), `DB_POOL` (5), and `WEB_CONCURRENCY` (0). Use a pool at least as large as the thread count and local disk for SQLite/WAL. The reverse proxy must forward WebSocket upgrades and overwrite forwarded headers. Production cookies are secure; `DISABLE_SSL=true` is for deliberate local HTTP tests.
+Configuration: `DATABASE_PATH`, `UPLOAD_ROOT`, `HOST`, `PORT`, `MAX_THREADS` (2), `DB_POOL` (5 per worker), and `WEB_CONCURRENCY` (`auto` in production, 0 in development). Auto uses the available CPU count minus two; machines with three or fewer CPUs use one process. Set an explicit worker count for your container CPU and memory limits. Each worker owns its database pool; keep it at least as large as the thread count. Use local disk for SQLite/WAL. The reverse proxy must forward WebSocket upgrades and overwrite forwarded headers. Production cookies are secure; `DISABLE_SSL=true` is for deliberate local HTTP tests.
+
+Cluster mode preloads the application and runs migrations once, then disconnects Sequel before forking so workers open independent SQLite connections. [Puma tuning measurements](docs/puma-tuning.md) explain the worker/thread choice.
 
 For Docker, set `SESSION_SECRET` and run `docker compose up --build`. The compose file binds port 9292 to loopback, persists data and starts the delivery worker. Docker deployment was not exercised in this workspace.
 

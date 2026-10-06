@@ -1,0 +1,100 @@
+{
+  "client_ruby": "ruby 4.0.2 (2026-03-17 revision d3da9fec82) +YJIT +PRISM [arm64-darwin25]",
+  "options": {
+    "duration": 3.0,
+    "warmup": 2.0,
+    "rounds": 2,
+    "concurrencies": "64",
+    "paths": "room,messages,sidebar,search",
+    "workers": 9,
+    "threads": 2,
+    "db_pool": 2,
+    "warmup_concurrency": 64,
+    "client_processes": 2
+  },
+  "fixture": {
+    "fixture": "campfire-roda-benchmark-v1",
+    "rooms.watercooler": 1,
+    "messages.busy_060": 1960,
+    "messages.count": 2000,
+    "users.count": 100
+  },
+  "results": {
+    "room_64": {
+      "path": "/rooms/1",
+      "conc": 64,
+      "client_processes": 2,
+      "gzip": false,
+      "secs": 3.0669590000179596,
+      "rps": 1254.6630065734387,
+      "ok": 3848,
+      "statuses": {
+        "200": 3848
+      },
+      "errors": 0,
+      "avg_bytes": 442317,
+      "latency_ms": {
+        "p50": 47.12800000561401,
+        "p95": 88.46199998515658,
+        "p99": 108.49000001326203
+      }
+    },
+    "messages_64": {
+      "path": "/rooms/1/messages?before=1960",
+      "conc": 64,
+      "client_processes": 2,
+      "gzip": false,
+      "secs": 3.013368999992963,
+      "rps": 1557.3930706829995,
+      "ok": 4693,
+      "statuses": {
+        "200": 4693
+      },
+      "errors": 0,
+      "avg_bytes": 417039,
+      "latency_ms": {
+        "p50": 38.83400000631809,
+        "p95": 72.16800001333468,
+        "p99": 86.03800000855699
+      }
+    },
+    "sidebar_64": {
+      "path": "/users/me/sidebar",
+      "conc": 64,
+      "client_processes": 2,
+      "gzip": false,
+      "secs": 3.028957000002265,
+      "rps": 3221.24084296763,
+      "ok": 9757,
+      "statuses": {
+        "200": 9757
+      },
+      "errors": 0,
+      "avg_bytes": 33354,
+      "latency_ms": {
+        "p50": 18.6309999844525,
+        "p95": 33.20299999904819,
+        "p99": 39.040999981807545
+      }
+    },
+    "search_64": {
+      "path": "/searches?q=coffee",
+      "conc": 64,
+      "client_processes": 2,
+      "gzip": false,
+      "secs": 3.1192600000067614,
+      "rps": 685.7395664341425,
+      "ok": 2139,
+      "statuses": {
+        "200": 2139
+      },
+      "errors": 0,
+      "avg_bytes": 1057763,
+      "latency_ms": {
+        "p50": 85.35899998969398,
+        "p95": 170.60700000729412,
+        "p99": 203.90100000076927
+      }
+    }
+  }
+}

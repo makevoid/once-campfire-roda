@@ -22,6 +22,8 @@ The [renderer optimization report](../docs/renderer-optimization.md) includes co
 
 By default `compare_http.rb` starts an isolated production Puma process on a random loopback port, with five threads, no cluster workers, a five-connection pool, and normal session/CSRF checks. It stops only the child server it started. Each client uses a persistent connection, disables compression, and consumes the response body. Warmup and measured requests must all be HTTP 200 without transport errors.
 
+Server options include `--workers`, `--threads`, and `--db-pool`. `--warmup-concurrency` warms multiple workers, and `--client-processes` divides the total client concurrency across Ruby processes while using the unchanged request client. It pools raw latency samples before calculating percentiles; startup is synchronized and elapsed time includes result transfer to the parent.
+
 Options include `--paths room,messages,sidebar,search`, `--concurrencies 1,16`, `--duration`, `--warmup`, `--rounds` (positive/even), and `--output`. Use `--url` to measure a server you already started instead; the supplied fixture credentials must work on that server.
 
 For a live comparison with a separately running Rails baseline:
@@ -57,18 +59,20 @@ git -C tmp/once-campfire checkout d2155e85a01b8439c32a3604ebb7f39fea1ace0f
 bundle exec ruby bench/seed.rb --output tmp/bench-seed
 
 # Mutating semantic audit on its own disposable fixture:
-BENCH_PARITY=1 ruby bench/rails/run.rb
+BENCH_WORKERS=8 BENCH_THREADS=2 BENCH_CLIENT_PROCESSES=2 BENCH_PARITY=1 ruby bench/rails/run.rb
 
 # Fresh fixtures; 4 rounds, 5 seconds/case, 3 seconds/path warmup:
-ruby bench/rails/run.rb
+BENCH_WORKERS=8 BENCH_THREADS=2 BENCH_CLIENT_PROCESSES=2 ruby bench/rails/run.rb
 ruby bench/rails/summarize.rb bench/results/rails-vs-roda-<timestamp>
 ```
 
 If the seed or checkout already exists, reuse it instead of recreating it. `RAILS_SOURCE` and `BENCH_SEED` override their paths; `REDIS_SERVER` overrides the Redis executable. `BENCH_ROUNDS` (positive/even), `BENCH_DURATION`, `BENCH_WARMUP`, and `BENCH_PREWARM` override timing defaults. Install the Rails bundle in its source checkout's `vendor/bundle` and the Roda bundle in this repository's `vendor/bundle`.
 
-The harness leaves the source checkout untouched, precompiles assets in a temporary copy, and preloads `ruby-vips` before the source image-security initializer. It uses native Active Record timestamp serialization, imports the Rails data through the Roda importer, compares all rows in eight fixture tables, and checks expected rendered message IDs before timing. The separate semantic audit compares text, formatting, authors, times, boosts, DOM structure and controls, forms, sidebars, autocomplete, PWA endpoints, writes, search updates, and access controls. Audit mutations never enter the timing fixture. All processes bind to loopback and are stopped on completion or failure.
+`BENCH_WORKERS` accepts an integer or `auto` (available CPUs minus two, falling back to single mode). `BENCH_THREADS` sets both apps’ per-worker thread and database-pool sizes. `BENCH_CONCURRENCIES` defaults to `16,64` in cluster mode and `1,16` in single mode. `BENCH_WARMUP_CONCURRENCY` defaults to the largest measured concurrency for clusters; this warms all workers rather than only one persistent connection. `BENCH_CLIENT_PROCESSES=2` avoids a single Ruby load-generator process becoming the limit. The original one-process benchmark remains reproducible with `BENCH_WORKERS=0 BENCH_THREADS=5 BENCH_CLIENT_PROCESSES=1`.
 
-Results include runtime/source metadata, a digest of Roda's runtime files, all round measurements, verification, server logs, and one-second process resource samples. The local Rails source is required only for this comparison, not for running the Roda app or its unit tests. The full audit is not included in ordinary CI because it requires both applications, libvips, and Redis.
+The harness leaves the source checkout untouched, precompiles assets in a temporary copy, and preloads `ruby-vips` before the source image-security initializer. It uses native Active Record timestamp serialization, imports the Rails data through the Roda importer, compares all rows in eight fixture tables, and checks expected rendered message IDs before timing. The separate semantic audit also runs the Roda frontend/HTTP/WebSocket audit against the configured Puma cluster. It compares text, formatting, authors, times, boosts, DOM structure and controls, forms, sidebars, autocomplete, PWA endpoints, writes, search updates, and access controls. Audit mutations never enter the timing fixture. All processes bind to loopback and are stopped on completion or failure.
+
+Results include runtime/source metadata, a digest of Roda's runtime files, all round measurements, verification, server logs, and one-second resource samples including each server’s master and worker descendants. Summed RSS counts shared copy-on-write pages in each process and is not unique physical memory usage. The local Rails source is required only for this comparison, not for running the Roda app or its unit tests. The full audit is not included in ordinary CI because it requires both applications, libvips, and Redis.
 
 The current comparison is documented in [recorded performance](../docs/performance.md#live-rails-and-roda-comparison). The earlier partial-port results remain in `recorded/2026-10-06/` as historical evidence and are not the current frontend's results.
 

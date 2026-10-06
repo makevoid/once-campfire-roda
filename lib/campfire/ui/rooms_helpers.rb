@@ -111,11 +111,11 @@ module Campfire
       DIRECT_INVOLVEMENT_ORDER = %w[ everything nothing ]
 
       def next_involvement_for(room, involvement:)
-        if room.direct?
-          DIRECT_INVOLVEMENT_ORDER[DIRECT_INVOLVEMENT_ORDER.index(involvement) + 1] || DIRECT_INVOLVEMENT_ORDER.first
-        else
-          SHARED_INVOLVEMENT_ORDER[SHARED_INVOLVEMENT_ORDER.index(involvement) + 1] || SHARED_INVOLVEMENT_ORDER.first
-        end
+        order = room.direct? ? DIRECT_INVOLVEMENT_ORDER : SHARED_INVOLVEMENT_ORDER
+        index = order.index(involvement)
+        # Hidden direct chats remain in the profile so their notifications can
+        # be re-enabled, even though "invisible" is outside the direct cycle.
+        index ? order[(index + 1) % order.length] : order.first
       end
     end
   end

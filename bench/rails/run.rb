@@ -7,13 +7,23 @@ require "rbconfig"
 require "timeout"
 require "time"
 require "digest"
-require_relative "../http_client"
+require "etc"
+require_relative "../parallel_http_client"
+require_relative "../process_sampler"
 
 ROOT = File.expand_path("../..", __dir__)
 SOURCE = File.expand_path(ENV.fetch("RAILS_SOURCE", "tmp/once-campfire"), ROOT)
 abort "Rails source has tracked changes; use a clean checkout" unless Open3.capture2("git", "-C", SOURCE, "status", "--porcelain", "--untracked-files=no").first.empty?
 RUBY = RbConfig.ruby
 BUNDLE = File.join(File.dirname(RUBY), "bundle")
+worker_setting = ENV.fetch("BENCH_WORKERS", "0")
+worker_count = worker_setting == "auto" ? [Etc.nprocessors - 2, 1].max : Integer(worker_setting)
+worker_count = 0 if worker_setting == "auto" && worker_count == 1
+thread_count = Integer(ENV.fetch("BENCH_THREADS", "5"))
+client_processes = Integer(ENV.fetch("BENCH_CLIENT_PROCESSES", "1"))
+concurrencies = ENV.fetch("BENCH_CONCURRENCIES", worker_count.zero? ? "1,16" : "16,64")
+warmup_concurrency = Integer(ENV.fetch("BENCH_WARMUP_CONCURRENCY", worker_count.zero? ? "1" : concurrencies.split(",").map { |value| Integer(value) }.max.to_s))
+abort "Invalid worker/thread/warmup counts" unless worker_count >= 0 && thread_count.positive? && warmup_concurrency.positive? && client_processes.positive?
 stamp = Time.now.utc.strftime("%Y%m%d-%H%M%S")
 work = File.join(ROOT, "tmp/rails-comparison", stamp)
 runtime = File.join(work, "rails")
@@ -33,8 +43,12 @@ FileUtils.mkdir_p([File.join(runtime, "storage/db"), File.join(runtime, "storage
 File.write(File.join(runtime, "config/initializers/00_load_vips.rb"), "require 'vips'\n")
 File.write(File.join(runtime, "config/puma.benchmark.rb"), <<~CONFIG)
   require_relative "environment"
-  threads 5, 5
-  workers 0
+  threads #{thread_count}, #{thread_count}
+  workers #{worker_count}
+  if #{worker_count}.positive?
+    preload_app!
+    before_fork { ActiveRecord::Base.connection_handler.clear_all_connections! }
+  end
   bind "tcp://127.0.0.1:\#{ENV.fetch('PORT')}"
   environment "production"
   Membership.disconnect_all
@@ -44,7 +58,8 @@ CONFIG
 common = {"PATH" => "#{File.dirname(RUBY)}:#{ENV.fetch('PATH')}", "RUBYOPT" => "--yjit", "BUNDLE_FROZEN" => "true"}
 rails_env = common.merge("BUNDLE_PATH" => File.join(SOURCE, "vendor/bundle"), "BUNDLE_GEMFILE" => File.join(runtime, "Gemfile"),
   "BUNDLE_WITHOUT" => "development:test", "RAILS_ENV" => "production", "DISABLE_SSL" => "true", "SKIP_TELEMETRY" => "true",
-  "SECRET_KEY_BASE" => "isolated-benchmark-fixture-key-" * 4, "RAILS_LOG_LEVEL" => "error", "WEB_CONCURRENCY" => "0", "RAILS_MAX_THREADS" => "5")
+  "SECRET_KEY_BASE" => "isolated-benchmark-fixture-key-" * 4, "RAILS_LOG_LEVEL" => "error",
+  "WEB_CONCURRENCY" => worker_count.to_s, "RAILS_MAX_THREADS" => thread_count.to_s)
 roda_env = common.merge("BUNDLE_PATH" => File.join(ROOT, "vendor/bundle"), "BUNDLE_GEMFILE" => File.join(ROOT, "Gemfile"), "BUNDLE_WITHOUT" => "")
 
 def run!(env, directory, log, *command)
@@ -54,6 +69,12 @@ end
 
 def unused_port
   TCPServer.open("127.0.0.1", 0) { |socket| socket.addr[1] }
+end
+
+def wait_for_workers(log, count)
+  Timeout.timeout(60) do
+    sleep 0.1 while File.read(log).scan(/Worker \d+ \(PID: \d+\) booted/).length < count
+  end
 end
 
 seed_source = File.expand_path(ENV.fetch("BENCH_SEED", "tmp/bench-seed"), ROOT)
@@ -97,18 +118,21 @@ begin
   rails_pid = Process.spawn(rails_env, BUNDLE, "exec", "puma", "-C", "config/puma.benchmark.rb", chdir: runtime,
     out: File.join(output, "rails.log"), err: [:child, :out])
   children << rails_pid
-  client = BenchmarkHTTPClient.new("http://127.0.0.1:#{port}")
+  client = ParallelHTTPClient.new("http://127.0.0.1:#{port}", processes: client_processes)
   Timeout.timeout(45) { sleep 0.1 until client.ready? }
+  wait_for_workers(File.join(output, "rails.log"), worker_count)
   puts "Rails and isolated Redis are ready"
   roda_port = unused_port
   roda_server_env = roda_env.merge("DATABASE_PATH" => File.join(matching, "campfire.sqlite3"), "UPLOAD_ROOT" => File.join(matching, "files"),
     "RACK_ENV" => "production", "DISABLE_SSL" => "true", "SESSION_SECRET" => "isolated-benchmark-fixture-secret-" * 4,
-    "HOST" => "127.0.0.1", "PORT" => roda_port.to_s, "WEB_CONCURRENCY" => "0", "MAX_THREADS" => "5", "DB_POOL" => "5")
+    "HOST" => "127.0.0.1", "PORT" => roda_port.to_s, "WEB_CONCURRENCY" => worker_count.to_s,
+    "MAX_THREADS" => thread_count.to_s, "DB_POOL" => thread_count.to_s)
   roda_pid = Process.spawn(roda_server_env, BUNDLE, "exec", "puma", "-C", "config/puma.rb", chdir: ROOT,
     out: File.join(output, "server.log"), err: [:child, :out])
   children << roda_pid
-  roda_client = BenchmarkHTTPClient.new("http://127.0.0.1:#{roda_port}")
+  roda_client = ParallelHTTPClient.new("http://127.0.0.1:#{roda_port}", processes: client_processes)
   Timeout.timeout(30) { sleep 0.1 until roda_client.ready? }
+  wait_for_workers(File.join(output, "server.log"), worker_count)
   run!(roda_env, ROOT, File.join(output, "verification.log"), BUNDLE, "exec", RUBY, File.join(__dir__, "verify.rb"),
     File.join(seed_source, "campfire.sqlite3"), File.join(matching, "campfire.sqlite3"), labels,
     "http://127.0.0.1:#{port}", "http://127.0.0.1:#{roda_port}", File.join(output, "verification.json"))
@@ -123,7 +147,11 @@ begin
   runtime_files = Dir.chdir(ROOT) { Dir["app.rb", "config.ru", "Gemfile*", "config/**/*", "db/**/*", "lib/**/*", "views/**/*", "public/**/*"].select { |path| File.file?(path) }.sort }
   runtime_digest = Digest::SHA256.new
   runtime_files.each { |path| runtime_digest << path << "\0" << File.binread(File.join(ROOT, path)) << "\0" }
-  metadata = {orchestrator_ruby: RUBY_DESCRIPTION, yjit: true, puma_threads: 5, puma_workers: 0, hardware: hardware,
+  metadata = {orchestrator_ruby: RUBY_DESCRIPTION, yjit: true, puma_threads: thread_count, puma_workers: worker_count,
+    db_pool_per_worker: thread_count, preload: worker_count.positive?, warmup_concurrency: warmup_concurrency, client_processes: client_processes,
+    concurrencies: concurrencies.split(",").map { |value| Integer(value) }, hardware: hardware,
+    http_client_sha256: Digest::SHA256.file(File.join(ROOT, "bench/http_client.rb")).hexdigest,
+    parallel_client_sha256: Digest::SHA256.file(File.join(ROOT, "bench/parallel_http_client.rb")).hexdigest,
     roda_runtime_sha256: runtime_digest.hexdigest, roda_runtime_files: runtime_files,
     rails_source: SOURCE, rails_ref: Open3.capture2("git", "-C", SOURCE, "rev-parse", "HEAD").first.strip,
     fixture: JSON.parse(File.read(labels)), runtime: runtime, output: output,
@@ -135,6 +163,9 @@ begin
       "--rails-database", database, "--roda-database", File.join(matching, "campfire.sqlite3"),
       "--labels", labels, "--output", File.join(output, "parity.json"))
     puts File.read(File.join(output, "parity.log"))
+    run!(roda_env.merge("BASE_URL" => "http://127.0.0.1:#{roda_port}"), ROOT, File.join(output, "frontend.json"),
+      BUNDLE, "exec", RUBY, "bench/verify_frontend.rb", labels)
+    puts File.read(File.join(output, "frontend.json"))
     exit
   end
   fixture = JSON.parse(File.read(labels))
@@ -142,7 +173,7 @@ begin
     cookie = warm_client.login(fixture)
     ["/rooms/#{fixture.fetch('rooms.watercooler')}", "/rooms/#{fixture.fetch('rooms.watercooler')}/messages?before=#{fixture.fetch('messages.busy_060')}",
       "/users/me/sidebar", "/searches?q=coffee"].each do |path|
-      warm_client.measure(path, cookie, concurrency: 1, duration: Float(ENV.fetch("BENCH_PREWARM", "5")))
+      warm_client.measure(path, cookie, concurrency: warmup_concurrency, duration: Float(ENV.fetch("BENCH_PREWARM", "5")))
     end
   end
   puts "Finished initial JIT/cache warmup"
@@ -152,13 +183,16 @@ begin
   comparison_pid = Process.spawn(roda_env, BUNDLE, "exec", RUBY, "bench/compare_http.rb", "--seed", matching,
     "--url", "http://127.0.0.1:#{roda_port}",
     "--baseline-url", "http://127.0.0.1:#{port}", "--baseline-labels", labels,
-    "--duration", duration, "--warmup", warmup, "--rounds", rounds, "--output", output, chdir: ROOT)
+    "--duration", duration, "--warmup", warmup, "--rounds", rounds, "--output", output,
+    "--workers", worker_count.to_s, "--threads", thread_count.to_s, "--db-pool", thread_count.to_s,
+    "--concurrencies", concurrencies, "--warmup-concurrency", warmup_concurrency.to_s,
+    "--client-processes", client_processes.to_s, chdir: ROOT)
   children << comparison_pid
   samples = []
   monitor = Thread.new do
     loop do
-      text, status = Open3.capture2("ps", "-p", [rails_pid, roda_pid, redis_pid, comparison_pid].join(","), "-o", "pid=,pcpu=,rss=")
-      samples << {at: Time.now.utc.iso8601, processes: text.lines.map { |line| pid, cpu, rss = line.split; {pid: pid.to_i, cpu_percent: cpu.to_f, rss_kib: rss.to_i} }} if status.success?
+      sample = ProcessSampler.capture(rails: rails_pid, roda: roda_pid, redis: redis_pid, client: comparison_pid)
+      samples << sample if sample
       sleep 1
     end
   end

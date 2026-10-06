@@ -1,0 +1,72 @@
+[
+  {
+    "workers": 8,
+    "threads": 2,
+    "client_processes": 1,
+    "total_clients": 64,
+    "rounds": 2,
+    "rps": {
+      "room": 1256.9896469424705,
+      "messages": 1555.2606891767,
+      "sidebar": 3208.757837206523,
+      "search": 672.1067175475864
+    },
+    "requests": 40678
+  },
+  {
+    "workers": 8,
+    "threads": 5,
+    "client_processes": 1,
+    "total_clients": 64,
+    "rounds": 2,
+    "rps": {
+      "room": 1179.9685921482787,
+      "messages": 1303.0186584617709,
+      "sidebar": 2521.6710910909514,
+      "search": 527.4740382236218
+    },
+    "requests": 33523
+  },
+  {
+    "workers": 9,
+    "threads": 2,
+    "client_processes": 1,
+    "total_clients": 64,
+    "rounds": 2,
+    "rps": {
+      "room": 1186.258001511022,
+      "messages": 1477.217026442758,
+      "sidebar": 3079.0107595554473,
+      "search": 612.5638904255912
+    },
+    "requests": 38572
+  },
+  {
+    "workers": 8,
+    "threads": 2,
+    "client_processes": 2,
+    "total_clients": 64,
+    "rounds": 2,
+    "rps": {
+      "room": 1236.1395206205639,
+      "messages": 1522.4142017012664,
+      "sidebar": 3040.806174351652,
+      "search": 686.6570991935487
+    },
+    "requests": 39546
+  },
+  {
+    "workers": 9,
+    "threads": 2,
+    "client_processes": 2,
+    "total_clients": 64,
+    "rounds": 2,
+    "rps": {
+      "room": 1254.9504610051667,
+      "messages": 1536.0953026669615,
+      "sidebar": 3093.2772213273984,
+      "search": 682.6495199599817
+    },
+    "requests": 40016
+  }
+]

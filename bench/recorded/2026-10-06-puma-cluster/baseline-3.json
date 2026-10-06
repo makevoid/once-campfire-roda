@@ -1,0 +1,176 @@
+{
+  "client_ruby": "ruby 4.0.2 (2026-03-17 revision d3da9fec82) +YJIT +PRISM [arm64-darwin25]",
+  "options": {
+    "duration": 5.0,
+    "warmup": 3.0,
+    "rounds": 4,
+    "concurrencies": "16,64",
+    "paths": "room,messages,sidebar,search",
+    "workers": 8,
+    "threads": 2,
+    "db_pool": 2,
+    "warmup_concurrency": 64,
+    "client_processes": 2
+  },
+  "fixture": {
+    "fixture": "campfire-roda-benchmark-v1",
+    "rooms.watercooler": 1,
+    "messages.busy_060": 1960,
+    "messages.count": 2000,
+    "users.count": 100
+  },
+  "results": {
+    "room_16": {
+      "path": "/rooms/1",
+      "conc": 16,
+      "client_processes": 2,
+      "gzip": false,
+      "secs": 5.013994999986608,
+      "rps": 757.080930477621,
+      "ok": 3796,
+      "statuses": {
+        "200": 3796
+      },
+      "errors": 0,
+      "avg_bytes": 457915,
+      "latency_ms": {
+        "p50": 20.600000018021092,
+        "p95": 27.861999988090247,
+        "p99": 35.30400001909584
+      }
+    },
+    "room_64": {
+      "path": "/rooms/1",
+      "conc": 64,
+      "client_processes": 2,
+      "gzip": false,
+      "secs": 5.096366000012495,
+      "rps": 724.8302025386214,
+      "ok": 3694,
+      "statuses": {
+        "200": 3694
+      },
+      "errors": 0,
+      "avg_bytes": 457915,
+      "latency_ms": {
+        "p50": 85.06599999964237,
+        "p95": 131.7540000018198,
+        "p99": 155.19099999801256
+      }
+    },
+    "messages_16": {
+      "path": "/rooms/1/messages?before=1960",
+      "conc": 16,
+      "client_processes": 2,
+      "gzip": false,
+      "secs": 5.012767000007443,
+      "rps": 1067.0753298511695,
+      "ok": 5349,
+      "statuses": {
+        "200": 5349
+      },
+      "errors": 0,
+      "avg_bytes": 424623,
+      "latency_ms": {
+        "p50": 14.703000022564083,
+        "p95": 20.634999993490055,
+        "p99": 27.104000007966533
+      }
+    },
+    "messages_64": {
+      "path": "/rooms/1/messages?before=1960",
+      "conc": 64,
+      "client_processes": 2,
+      "gzip": false,
+      "secs": 5.062456999992719,
+      "rps": 1010.1814198140064,
+      "ok": 5114,
+      "statuses": {
+        "200": 5114
+      },
+      "errors": 0,
+      "avg_bytes": 424623,
+      "latency_ms": {
+        "p50": 62.11599998641759,
+        "p95": 88.88699999079108,
+        "p99": 108.07699998258613
+      }
+    },
+    "sidebar_16": {
+      "path": "/users/me/sidebar",
+      "conc": 16,
+      "client_processes": 2,
+      "gzip": false,
+      "secs": 5.014932000020053,
+      "rps": 969.5046712459028,
+      "ok": 4862,
+      "statuses": {
+        "200": 4862
+      },
+      "errors": 0,
+      "avg_bytes": 41441,
+      "latency_ms": {
+        "p50": 16.008000005967915,
+        "p95": 23.111999995307997,
+        "p99": 30.383999983314425
+      }
+    },
+    "sidebar_64": {
+      "path": "/users/me/sidebar",
+      "conc": 64,
+      "client_processes": 2,
+      "gzip": false,
+      "secs": 5.087410999985877,
+      "rps": 981.638794273524,
+      "ok": 4994,
+      "statuses": {
+        "200": 4994
+      },
+      "errors": 0,
+      "avg_bytes": 41441,
+      "latency_ms": {
+        "p50": 63.9800000062678,
+        "p95": 83.62399999168701,
+        "p99": 109.33000000659376
+      }
+    },
+    "search_16": {
+      "path": "/searches?q=coffee",
+      "conc": 16,
+      "client_processes": 2,
+      "gzip": false,
+      "secs": 5.025411000009626,
+      "rps": 528.911963617485,
+      "ok": 2658,
+      "statuses": {
+        "200": 2658
+      },
+      "errors": 0,
+      "avg_bytes": 1084451,
+      "latency_ms": {
+        "p50": 30.337000003783032,
+        "p95": 55.238000000827014,
+        "p99": 73.52499998523854
+      }
+    },
+    "search_64": {
+      "path": "/searches?q=coffee",
+      "conc": 64,
+      "client_processes": 2,
+      "gzip": false,
+      "secs": 5.1287629999860656,
+      "rps": 492.12646402394836,
+      "ok": 2524,
+      "statuses": {
+        "200": 2524
+      },
+      "errors": 0,
+      "avg_bytes": 1084451,
+      "latency_ms": {
+        "p50": 133.4470000001602,
+        "p95": 163.7979999941308,
+        "p99": 184.96699997922406
+      }
+    }
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "client_ruby": "ruby 4.0.2 (2026-03-17 revision d3da9fec82) +YJIT +PRISM [arm64-darwin25]",
+  "options": {
+    "duration": 3.0,
+    "warmup": 2.0,
+    "rounds": 2,
+    "concurrencies": "64",
+    "paths": "room,messages,sidebar,search",
+    "workers": 9,
+    "threads": 2,
+    "db_pool": 2,
+    "warmup_concurrency": 64
+  },
+  "fixture": {
+    "fixture": "campfire-roda-benchmark-v1",
+    "rooms.watercooler": 1,
+    "messages.busy_060": 1960,
+    "messages.count": 2000,
+    "users.count": 100
+  },
+  "results": {
+    "room_64": {
+      "path": "/rooms/1",
+      "conc": 64,
+      "gzip": false,
+      "secs": 3.031807999999728,
+      "rps": 1132.657476990729,
+      "ok": 3434,
+      "statuses": {
+        "200": 3434
+      },
+      "errors": 0,
+      "avg_bytes": 442317,
+      "latency_ms": {
+        "p50": 53.01899998448789,
+        "p95": 94.91100002196617,
+        "p99": 114.39400000381283
+      }
+    },
+    "messages_64": {
+      "path": "/rooms/1/messages?before=1960",
+      "conc": 64,
+      "gzip": false,
+      "secs": 3.0546789999934845,
+      "rps": 1385.4156197783882,
+      "ok": 4232,
+      "statuses": {
+        "200": 4232
+      },
+      "errors": 0,
+      "avg_bytes": 417039,
+      "latency_ms": {
+        "p50": 44.431000016629696,
+        "p95": 66.52399999438785,
+        "p99": 82.17599999625236
+      }
+    },
+    "sidebar_64": {
+      "path": "/users/me/sidebar",
+      "conc": 64,
+      "gzip": false,
+      "secs": 3.019377999997232,
+      "rps": 2925.436960860183,
+      "ok": 8833,
+      "statuses": {
+        "200": 8833
+      },
+      "errors": 0,
+      "avg_bytes": 33354,
+      "latency_ms": {
+        "p50": 20.69800000754185,
+        "p95": 36.998000025050715,
+        "p99": 44.96699999435805
+      }
+    },
+    "search_64": {
+      "path": "/searches?q=coffee",
+      "conc": 64,
+      "gzip": false,
+      "secs": 3.0759179999877233,
+      "rps": 557.5571260374447,
+      "ok": 1715,
+      "statuses": {
+        "200": 1715
+      },
+      "errors": 0,
+      "avg_bytes": 1057763,
+      "latency_ms": {
+        "p50": 109.39800000051036,
+        "p95": 189.4120000069961,
+        "p99": 242.78400000184774
+      }
+    }
+  }
+}

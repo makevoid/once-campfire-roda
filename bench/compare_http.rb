@@ -9,10 +9,12 @@ require "socket"
 require "rbconfig"
 require "tmpdir"
 require_relative "../lib/campfire/database"
-require_relative "http_client"
+require_relative "parallel_http_client"
+require_relative "process_sampler"
 
 options = {seed: "tmp/bench-seed", url: nil, baseline_url: nil, baseline_labels: nil,
-  duration: 3.0, warmup: 2.0, rounds: 2, concurrencies: "1,16", paths: "room,messages,sidebar,search", output: "bench/results/http"}
+  duration: 3.0, warmup: 2.0, rounds: 2, concurrencies: "1,16", paths: "room,messages,sidebar,search", output: "bench/results/http",
+  workers: 0, threads: 5, db_pool: 5, warmup_concurrency: 1, client_processes: 1}
 OptionParser.new do |parser|
   parser.banner = "Usage: ruby bench/compare_http.rb [options] (starts an isolated Roda server by default)"
   options.each do |key, default|
@@ -21,6 +23,8 @@ OptionParser.new do |parser|
   end
 end.parse!
 abort "duration/warmup must be positive; rounds must be positive and even" unless options[:duration].positive? && options[:warmup].positive? && options[:rounds].positive? && options[:rounds].even?
+abort "workers must be nonnegative; threads, pool, warmup concurrency and client processes must be positive" unless options[:workers] >= 0 && [:threads, :db_pool, :warmup_concurrency, :client_processes].all? { |key| options[key].positive? }
+abort "database pool must cover the request threads" if options[:db_pool] < options[:threads]
 concurrencies = options[:concurrencies].split(",").map { |v| Integer(v) }
 abort "concurrencies must be positive" unless concurrencies.all?(&:positive?) && !concurrencies.empty?
 labels = JSON.parse(File.read(File.join(options[:seed], "labels.json")))
@@ -30,6 +34,8 @@ abort "Unknown or duplicate paths" unless (selected - %w[room messages sidebar s
 FileUtils.mkdir_p(options[:output])
 root = File.expand_path("..", __dir__)
 pid = nil
+monitor = nil
+samples = []
 work = Dir.mktmpdir("campfire-http-")
 begin
   unless options[:url]
@@ -38,7 +44,8 @@ begin
     options[:url] = "http://127.0.0.1:#{port}"
     env = {"DATABASE_PATH" => File.join(work, "campfire.sqlite3"), "UPLOAD_ROOT" => File.expand_path(File.join(options[:seed], "files")), "RACK_ENV" => "production",
       "DISABLE_SSL" => "true", "SESSION_SECRET" => "isolated-benchmark-fixture-secret-" * 4,
-      "HOST" => "127.0.0.1", "PORT" => port.to_s, "WEB_CONCURRENCY" => "0", "MAX_THREADS" => "5", "DB_POOL" => "5"}
+      "HOST" => "127.0.0.1", "PORT" => port.to_s, "WEB_CONCURRENCY" => options[:workers].to_s,
+      "MAX_THREADS" => options[:threads].to_s, "DB_POOL" => options[:db_pool].to_s}
     pid = Process.spawn(env, "bundle", "exec", "puma", "-C", "config/puma.rb", chdir: root,
       out: File.join(options[:output], "server.log"), err: [:child, :out])
   end
@@ -48,13 +55,27 @@ begin
     endpoints["baseline"] = [options[:baseline_url], baseline]
   end
   clients = endpoints.to_h do |name, (url, fixture)|
-    client = BenchmarkHTTPClient.new(url)
+    client = ParallelHTTPClient.new(url, processes: options[:client_processes])
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 30
     until client.ready?
       raise "#{name} did not start; check #{options[:output]}/server.log" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
       sleep 0.1
     end
     [name, [client, client.login(fixture), fixture]]
+  end
+  if pid
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 30
+    while File.read(File.join(options[:output], "server.log")).scan(/Worker \d+ \(PID: \d+\) booted/).length < options[:workers]
+      raise "Puma workers did not boot" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+      sleep 0.1
+    end
+    monitor = Thread.new do
+      loop do
+        sample = ProcessSampler.capture(roda: pid, client: Process.pid)
+        samples << sample if sample
+        sleep 1
+      end
+    end
   end
   options[:rounds].times do |round|
     order = round.even? ? clients.keys : clients.keys.reverse
@@ -66,7 +87,7 @@ begin
       results = {}
       selected.each do |label|
         path = paths.fetch(label)
-        client.measure(path, cookie, concurrency: 1, duration: options[:warmup])
+        client.measure(path, cookie, concurrency: options[:warmup_concurrency], duration: options[:warmup])
         concurrencies.each do |concurrency|
           result = client.measure(path, cookie, concurrency: concurrency, duration: options[:duration])
           results["#{label}_#{concurrency}"] = result
@@ -78,6 +99,9 @@ begin
     end
   end
 ensure
+  monitor&.kill
+  monitor&.join
+  File.write(File.join(options[:output], "resources.json"), JSON.pretty_generate({pids: {roda: pid, client: Process.pid}, samples: samples}) + "\n") if pid
   if pid
     Process.kill("TERM", pid) rescue Errno::ESRCH
     Process.wait(pid) rescue Errno::ECHILD
