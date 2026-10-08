@@ -1,11 +1,13 @@
 # Shared Rails/Roda verification
 
-`bin/benchmark` runs the public [once-campfire-verification](https://github.com/makevoid/once-campfire-verification) harness, defaulting to **Rails and Roda only**. Its Rust load generator and response contracts are unchanged. The checked-in adapter patch adds Roda's native database audit and Docker Desktop support.
+`bin/benchmark` runs the public [once-campfire-verification](https://github.com/makevoid/once-campfire-verification) harness, defaulting to **Rails and Roda only**. Its Rust load generator and response contracts are unchanged. The pinned shared revision includes Roda's native database audit and Docker Desktop support. The checked-in adapter patch records those changes and lets the runner verify that they are present.
+
+The recorded comparison used verification revision `c3a99fa` plus that patch. Published revision [`dd47ad4`](https://github.com/makevoid/once-campfire-verification/commit/dd47ad4678d0d59b3ec18a10f855feb258fce4f7) contains the same benchmark code, with usage documentation and the tested client Dockerfile added. Historical receipt hashes remain unchanged.
 
 Prerequisites: Docker, Ruby 4.0, `gh` with GitHub SSH access, Git, SQLite CLI, and FFmpeg. On macOS use Homebrew's SQLite (`brew install sqlite ffmpeg` and put `$(brew --prefix sqlite)/bin` first on `PATH`); Apple's older SQLite could not read the fixture's WAL database reliably here.
 
 ```sh
-# Clone pinned sources with gh over SSH, apply the adapter, build images and seed,
+# Clone pinned sources with gh over SSH, verify the adapter, build images and seed,
 # then measure three alternating 8-second rounds at 16 clients:
 ruby bin/benchmark --prepare
 

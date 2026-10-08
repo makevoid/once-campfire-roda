@@ -4,7 +4,8 @@
 
 <p align="center">
   <strong>16 concurrent clients · Median of 4 × 8-second rounds · Requests per second</strong><br>
-  Ruby 4.0.7 + YJIT · Puma 8.0.2: 3 workers × 5 threads · Shared verification fixture
+  Ruby 4.0.7 + YJIT · Puma 8.0.2: 3 workers × 5 threads · Shared verification fixture<br>
+  Tested on Apple M4 Mac mini · 10 cores
 </p>
 
 <table align="center">
