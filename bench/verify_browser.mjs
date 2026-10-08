@@ -36,6 +36,9 @@ try {
   await page.waitForFunction(() => document.querySelector('turbo-cable-stream-source[channel="RoomMessagesChannel"]')?.hasAttribute("connected"))
   check(await page.locator(".message[data-message-id]").count() > 0, "messages rendered")
   check(await page.locator("#composer lexxy-editor").evaluate(element => typeof element.value === "string"), "Lexxy initialized")
+  await page.evaluate(() => Promise.all(document.getAnimations()
+    .filter(animation => Number.isFinite(animation.effect?.getComputedTiming().endTime))
+    .map(animation => animation.finished.catch(() => {}))))
   await page.screenshot({ path: `${output}/room-desktop.png` })
   const text = `Browser port audit ${Date.now()}`
   await page.locator("#composer [contenteditable=true]").fill(text)
@@ -81,7 +84,7 @@ try {
   check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "mobile viewport has no horizontal overflow")
   // Remove the test message through the authenticated application endpoint.
   const removed = await page.evaluate(async ({ room, id }) => {
-    const response = await fetch(`/rooms/${room}/messages/${id}`, { method: "DELETE", headers: { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content, Accept: "text/vnd.turbo-stream.html" } })
+    const response = await fetch(`/rooms/${room}/messages/${id}`, { method: "DELETE", headers: { Accept: "text/vnd.turbo-stream.html" } })
     return response.status
   }, { room: labels["rooms.watercooler"], id: messageId })
   check(removed === 200, "message cleanup")

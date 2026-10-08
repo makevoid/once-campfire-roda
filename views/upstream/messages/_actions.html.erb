@@ -9,7 +9,7 @@
       <div class="quick-boosts">
         <% reaction_choices.each do |character, title| %>
           <form action="/messages/<%= message.id %>/boosts" method="post" data-turbo-frame="<%= boosting_id %>" data-action="popup#close">
-            <input type="hidden" name="authenticity_token" value="<%= @csrf %>">
+
             <input type="hidden" name="boost[content]" value="<%= character %>">
             <button type="submit" name="button" title="<%= title %>" class="btn message__action-btn" data-emoji="<%= character %>">
               <figure class="margin-none boost-character"><%= character %></figure>

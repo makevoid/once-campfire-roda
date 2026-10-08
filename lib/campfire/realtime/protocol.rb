@@ -124,6 +124,7 @@ module Campfire
       end
 
       def presence(sub, action)
+        now = Time.now.utc
         @db.transaction(mode: :immediate) do
           row = membership(sub.room_id)
           next unless row
@@ -147,7 +148,7 @@ module Campfire
           end
           @db[:memberships].where(id: row[:id]).update(changes)
         end
-        @container.hub.publish("read:#{@user.id}", room_id: sub.room_id) if action == "present"
+        @container.hub.publish("read:#{@user.id}", room_id: sub.room_id, at: now.to_f) if action == "present"
       end
 
       def view(page: nil)
@@ -163,8 +164,8 @@ module Campfire
             transmit(identifier: identifier, message: rendered) unless rendered.empty?
           elsif sub.channel == "UnreadRoomsChannel" && event[:kind] == "create"
             member = membership(event[:room_id])
-            if member && member[:involvement] != "invisible" && member[:unread_at] && payload["creator_id"] != @user.id
-              transmit(identifier: identifier, message: {roomId: event[:room_id]})
+            if member && (member[:unread_at] || (member[:connected_at] && member[:connected_at] >= Time.now.utc - 60))
+              transmit(identifier: identifier, message: {roomId: event[:room_id], at: event[:created_at].to_f})
             end
           end
         end
@@ -172,7 +173,7 @@ module Campfire
 
       def message_stream(event, payload)
         if event[:kind] == "delete"
-          return turbo("remove", "message_#{payload['client_message_id']}")
+          return turbo("remove", "message_#{event[:message_id]}")
         elsif event[:kind] == "boost_delete"
           return turbo("remove", "boost_#{payload['boost_id']}")
         end
@@ -182,11 +183,11 @@ module Campfire
         record = ui.context.message(message[:id])
         case event[:kind]
         when "create" then turbo("append", "messages_room_#{event[:room_id]}", ui.render(record))
-        when "edit" then turbo("replace", "presentation_message_#{message[:client_message_id]}", ui.render("messages/presentation", message: record))
+        when "edit" then turbo("replace", "presentation_message_#{message[:id]}", ui.render("messages/presentation", message: record))
         when "boost_create"
           boost = record.boosts.find { |item| item.id == payload["boost_id"] }
-          boost ? turbo("append", "boosts_message_#{message[:client_message_id]}", ui.render("messages/boosts/boost", boost: boost)) : ""
-        else turbo("replace", "message_#{message[:client_message_id]}", ui.render(record))
+          boost ? turbo("append", "boosts_message_#{message[:id]}", ui.render("messages/boosts/boost", boost: boost)) : ""
+        else turbo("replace", "message_#{message[:id]}", ui.render(record))
         end
       end
 

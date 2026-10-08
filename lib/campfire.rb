@@ -3,6 +3,8 @@
 require_relative "campfire/database"
 require_relative "campfire/domain"
 require_relative "campfire/repository"
+require_relative "campfire/response_cache"
+require_relative "campfire/fragment_cache"
 require_relative "campfire/authentication"
 require_relative "campfire/uploads"
 require_relative "campfire/media"
@@ -21,9 +23,11 @@ require_relative "campfire/realtime/socket"
 
 module Campfire
   class Container
-    attr_reader :db, :repo, :auth, :uploads, :media, :tokens, :service, :hub
+    attr_reader :db, :repo, :auth, :uploads, :media, :tokens, :service, :hub, :response_cache, :fragment_cache
     def initialize(db:, upload_root: ENV.fetch("UPLOAD_ROOT", File.expand_path("../storage/files", __dir__)), push_resolver: Resolv.method(:getaddresses))
       @db = db
+      @response_cache = ResponseCache.new(db)
+      @fragment_cache = FragmentCache.new
       @repo = Repository.new(db)
       @auth = Authentication.new(db)
       @uploads = Uploads.new(upload_root)

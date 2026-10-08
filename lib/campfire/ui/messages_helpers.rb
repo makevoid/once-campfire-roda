@@ -35,6 +35,7 @@ module Campfire
         controller: "reply",
         user_id: message.creator_id,
         message_id: message.id,
+        client_message_id: message[:client_message_id],
         message_timestamp: message_timestamp_milliseconds,
         message_updated_at: epoch(message.updated_at),
         sort_value: message_timestamp_milliseconds,

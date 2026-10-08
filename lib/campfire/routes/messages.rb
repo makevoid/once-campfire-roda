@@ -21,21 +21,23 @@ module Campfire
       def message_routes(r)
         r.is do
           r.get(true) do
-            page = repo.messages(@room.id, before: r.params["before"], after: r.params["after"])
-            if @bot
-              response["x-total-count"] = db[:messages].where(room_id: @room.id).count.to_s
-              unless page.empty?
-                direction = r.params["after"] ? "after" : "before"
-                id = direction == "after" ? page.messages.last[:id] : page.messages.first[:id]
-                remaining = direction == "after" ? repo.messages(@room.id, after: id) : repo.messages(@room.id, before: id)
-                response["link"] = %(<#{r.base_url}#{r.path}?#{direction}=#{id}>; rel="next") unless remaining.empty?
+            cached_read do
+              page = repo.messages(@room.id, before: r.params["before"], after: r.params["after"])
+              if @bot
+                response["x-total-count"] = db[:rooms].where(id: @room.id).get(:messages_count).to_s
+                unless page.empty?
+                  direction = r.params["after"] ? "after" : "before"
+                  id = direction == "after" ? page.messages.last[:id] : page.messages.first[:id]
+                  remaining = direction == "after" ? repo.messages(@room.id, after: id) : repo.messages(@room.id, before: id)
+                  response["link"] = %(<#{r.base_url}#{r.path}?#{direction}=#{id}>; rel="next") unless remaining.empty?
+                end
               end
+              json(api_messages(page)) if wants_json?
+              r.halt 204 if page.empty?
+              view = ui(page: page)
+              fingerprint = JSON.generate([@user.id, page.messages, page.boosts, page.attachments, db[:users].max(:updated_at)])
+              conditional_html(view.page("messages/index", messages: view.context.page_messages(page), layout: false), fingerprint: fingerprint)
             end
-            json(api_messages(page)) if wants_json?
-            r.halt 204 if page.empty?
-            view = ui(page: page)
-            fingerprint = JSON.generate([@user.id, page.messages, page.boosts, page.attachments, db[:users].max(:updated_at)])
-            conditional_html(view.page("messages/index", messages: view.context.page_messages(page), layout: false), fingerprint: fingerprint)
           end
           r.post(true) do
             message = service.post_message(@user, @room.id, message_attributes)
@@ -71,7 +73,7 @@ module Campfire
           r.delete(true) do
             service.delete_message(@user, @room.id, id)
             r.halt 204 if wants_json?
-            r.halt stream("remove", "message_#{message[:client_message_id]}") if wants_stream?
+            r.halt stream("remove", "message_#{message[:id]}") if wants_stream?
             r.redirect "/rooms/#{@room.id}"
           end
         end

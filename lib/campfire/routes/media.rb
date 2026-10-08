@@ -37,7 +37,7 @@ module Campfire
         file = db[:attachments][id: id] || raise(Error.new("File not found", 404))
         repo.room(@user, db[:messages].where(id: file[:message_id]).get(:room_id))
         if request.params["variant"] == "thumb"
-          variant = container.media.variant(file, :thumb) || raise(Error.new("Preview not available", 404))
+          variant = container.media.existing_variant(file, :thumb) || raise(Error.new("Preview not available", 404))
           send_local_file(*variant)
         end
         inline = request.params["inline"] == "1" && (Uploads::IMAGE_TYPES.include?(file[:content_type]) ||

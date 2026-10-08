@@ -19,10 +19,13 @@ module Campfire
       User.new(row)
     end
 
-    def room(user, id)
-      row = db[:rooms].join(:memberships, room_id: :id)
-        .where(Sequel[:rooms][:id] => id, Sequel[:memberships][:user_id] => user.id)
-        .select_all(:rooms).select_append(Sequel[:memberships][:involvement], Sequel[:memberships][:unread_at]).first
+    def room(user, id, cache: nil, version: nil)
+      lookup = -> do
+        db[:rooms].join(:memberships, room_id: :id)
+          .where(Sequel[:rooms][:id] => id, Sequel[:memberships][:user_id] => user.id)
+          .select_all(:rooms).select_append(Sequel[:memberships][:involvement], Sequel[:memberships][:unread_at]).first
+      end
+      row = cache ? cache.record("room:#{user.id}:#{id}", version, &lookup) : lookup.call
       raise Error.new("Room not found", 404) unless row
       Room.new(row)
     end

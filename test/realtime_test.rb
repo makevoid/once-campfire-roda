@@ -52,19 +52,19 @@ class RealtimeTest < CampfireTest
     protocol.deliver(:message, db[:events].order(:id).last)
     stream = Nokogiri::HTML5.fragment(packets.last["message"]).at_css("turbo-stream")
     assert_equal "messages_room_#{room.id}", stream["target"]
-    assert stream.at_css("#message_live-one")
+    assert stream.at_css("#message_#{message[:id]}")
     service.edit_message(admin, room.id, message[:id], {"body" => "edited"})
     protocol.deliver(:message, db[:events].order(:id).last)
-    assert_includes packets.last["message"], 'target="presentation_message_live-one"'
+    assert_includes packets.last["message"], %Q(target="presentation_message_#{message[:id]}")
     boost_id = service.boost(member, room.id, message[:id], "👍")
     protocol.deliver(:message, db[:events].order(:id).last)
-    assert_includes packets.last["message"], 'target="boosts_message_live-one"'
+    assert_includes packets.last["message"], %Q(target="boosts_message_#{message[:id]}")
     service.unboost(member, room.id, message[:id], boost_id)
     protocol.deliver(:message, db[:events].order(:id).last)
     assert_includes packets.last["message"], %(target="boost_#{boost_id}")
     service.delete_message(admin, room.id, message[:id])
     protocol.deliver(:message, db[:events].order(:id).last)
-    assert_includes packets.last["message"], 'action="remove" target="message_live-one"'
+    assert_includes packets.last["message"], %Q(action="remove" target="message_#{message[:id]}")
   end
 
   def test_presence_counts_tabs_and_session_revocation_disconnects
@@ -107,7 +107,7 @@ class RealtimeTest < CampfireTest
     event = db[:events].order(:id).last
     protocol.deliver(:message, event)
     stranger.deliver(:message, event)
-    assert_equal({"roomId" => private_room.id}, packets.last["message"])
+    assert_equal({"roomId" => private_room.id, "at" => event[:created_at].to_f}, packets.last["message"])
     refute stranger_packets.any? { |packet| packet["message"].is_a?(Hash) }
   end
 end

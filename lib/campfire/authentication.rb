@@ -42,14 +42,19 @@ module Campfire
       raw
     end
 
-    def resume(token)
+    def resume(token, cache: nil, version: nil)
       return unless token.is_a?(String) && token.bytesize == 64
       now = Time.now.utc
-      row = @db[:sessions].join(:users, id: :user_id)
-        .where(Sequel[:sessions][:token] => Digest::SHA256.hexdigest(token), Sequel[:users][:status] => 0)
-        .where { Sequel[:sessions][:created_at] > now - SESSION_TTL }
-        .select_all(:users).select_append(Sequel[:sessions][:id].as(:session_id), Sequel[:sessions][:last_active_at]).first
-      return unless row
+      digest = Digest::SHA256.hexdigest(token)
+      lookup = -> do
+        @db[:sessions].join(:users, id: :user_id)
+          .where(Sequel[:sessions][:token] => digest, Sequel[:users][:status] => 0)
+          .where { Sequel[:sessions][:created_at] > now - SESSION_TTL }
+          .select_all(:users).select_append(Sequel[:sessions][:id].as(:session_id), Sequel[:sessions][:last_active_at],
+            Sequel[:sessions][:created_at].as(:session_created_at)).first
+      end
+      row = cache ? cache.record("session:#{digest}", version, &lookup) : lookup.call
+      return unless row && row[:session_created_at] > now - SESSION_TTL
       if row[:last_active_at] < now - 3600
         @db[:sessions].where(id: row[:session_id]).where { last_active_at < now - 3600 }.update(last_active_at: now, updated_at: now)
       end

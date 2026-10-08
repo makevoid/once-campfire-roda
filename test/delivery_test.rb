@@ -84,6 +84,41 @@ class DeliveryTest < CampfireTest
     assert_raises(Campfire::Error) { Campfire::OutboundHTTP.uri("http://example.com", https_only: true) }
   end
 
+  def test_push_batch_counts_badges_once_and_rechecks_banned_recipients_at_delivery
+    old = ENV.values_at("VAPID_PRIVATE_KEY", "VAPID_PUBLIC_KEY")
+    ENV["VAPID_PRIVATE_KEY"] = ENV["VAPID_PUBLIC_KEY"] = "test-key"
+    2.times do |i|
+      service.subscribe(member, {"endpoint" => "https://fcm.googleapis.com/device#{i}", "keys" => {
+        "p256dh" => Base64.urlsafe_encode64("x" * 65), "auth" => Base64.urlsafe_encode64("y" * 16)}}, agent: "Test")
+    end
+    calls, queries = [], []
+    logger = Object.new
+    logger.define_singleton_method(:info) { |sql| queries << sql }
+    push = Class.new do
+      define_method(:initialize) { |**options| calls << options }
+      def perform; end
+    end
+    delivery = Campfire::Delivery.new(container, push_class: push)
+    post_message(admin, room, "#{mention(member)} hello")
+    db.loggers << logger
+    delivery.work_once
+    assert_equal 1, queries.count { |sql| sql.include?("GROUP BY `user_id`") }
+    jobs = db[:jobs].where(kind: "push").order(:id).all
+    assert_equal 2, jobs.size
+    assert_equal [1, 1], jobs.map { |job| JSON.parse(job[:payload])["badge"] }
+    queries.clear
+    delivery.work_once
+    assert_equal 1, calls.size
+    refute queries.any? { |sql| sql.include?("count(*)") }
+    service.manage_user(admin, member.id, :ban)
+    delivery.work_once
+    assert_equal 1, calls.size
+    assert_equal 2, db[:push_subscriptions].where(user_id: member.id).count
+  ensure
+    db.loggers.delete(logger)
+    ENV["VAPID_PRIVATE_KEY"], ENV["VAPID_PUBLIC_KEY"] = old
+  end
+
   def test_webhook_attachment_reply_payload_and_timeout_message
     bot = service.create_user({"name" => "Helper"}, role: 2)
     service.update_bot(admin, bot.id, {"name" => "Helper", "webhook_url" => "http://localhost/hook"})

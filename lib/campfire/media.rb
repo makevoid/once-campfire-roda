@@ -13,6 +13,7 @@ module Campfire
     AVATAR_COLORS = %w[#AF2E1B #CC6324 #3B4B59 #BFA07A #ED8008 #ED3F1C #BF1B1B #736B1E #D07B53
       #736356 #AD1D1D #BF7C2A #C09C6F #698F9C #7C956B #5D618F #3B3633 #67695E].freeze
     VARIANTS = {avatar: [512, 512, "webp"], logo: [512, 512, "png"], small_logo: [192, 192, "png"], thumb: [1200, 800, "webp"]}.freeze
+    THUMBNAIL_MAX_PIXELS = 250_000_000
 
     def initialize(db, uploads)
       @db, @uploads = db, uploads
@@ -68,6 +69,7 @@ module Campfire
 
     def variant(file, name)
       return unless file
+      return unless name != :thumb || preview_dimensions_allowed?(file)
       return preview(file) if name == :thumb && (file[:content_type].start_with?("video/") || file[:content_type] == "application/pdf")
       return unless Uploads::IMAGE_TYPES.include?(file[:content_type])
       width, height, format = VARIANTS.fetch(name)
@@ -89,7 +91,26 @@ module Campfire
       nil
     end
 
+    # Attachment views only serve already generated previews. Unsupported or
+    # failed uploads remain downloadable without retrying expensive work per view.
+    def existing_variant(file, name)
+      return unless file
+      preview = name == :thumb && (file[:content_type].start_with?("video/") || file[:content_type] == "application/pdf")
+      format = preview ? "webp" : VARIANTS.fetch(name).last
+      key = Digest::SHA256.hexdigest(preview ? "preview-v1:#{file[:key]}" : "variant-v1:#{file[:key]}:#{name}")
+      path = @uploads.path(key)
+      [path, "image/#{format}"] if File.file?(path)
+    end
+
+    def preview_dimensions_allowed?(file)
+      return true unless Uploads::IMAGE_TYPES.include?(file[:content_type]) || file[:content_type].start_with?("video/")
+      metadata = JSON.parse(file[:metadata] || "{}")
+      width, height = metadata.values_at("width", "height")
+      width.is_a?(Numeric) && height.is_a?(Numeric) && width.positive? && height.positive? && width * height <= THUMBNAIL_MAX_PIXELS
+    end
+
     def preview(file)
+      return unless preview_dimensions_allowed?(file)
       key = Digest::SHA256.hexdigest("preview-v1:#{file[:key]}")
       target = @uploads.path(key)
       unless File.exist?(target)
@@ -124,7 +145,7 @@ module Campfire
         input.close
         error_reader = Thread.new { nil while err.read(4096) }
         begin
-          Timeout.timeout(20) do
+          Timeout.timeout(10) do
             output = out.read(1_048_576)
             raise Error, "Media processor failed" unless process.value.success?
           end

@@ -3,9 +3,26 @@
 require "sequel"
 require "sqlite3"
 require "fileutils"
+require_relative "wal_checkpointer"
 
 module Campfire
   class Database
+    CHECKPOINTERS = []
+
+    def self.start_checkpointer(db)
+      path = db.opts[:database]
+      return if path.nil? || path == ":memory:" || ENV["RACK_ENV"] == "test"
+      checkpointer = WalCheckpointer.new(File.expand_path(path))
+      CHECKPOINTERS << checkpointer
+      checkpointer.start
+      checkpointer
+    end
+
+    def self.stop_checkpointers = CHECKPOINTERS.each(&:stop)
+    def self.start_checkpointers = CHECKPOINTERS.each(&:start)
+
+    at_exit { stop_checkpointers }
+
     def self.connect(path: ENV.fetch("DATABASE_PATH", File.expand_path("../../storage/campfire.sqlite3", __dir__)), pool: ENV.fetch("DB_POOL", "5").to_i)
       FileUtils.mkdir_p(File.dirname(path)) unless path == ":memory:"
       Sequel.default_timezone = :utc
@@ -16,6 +33,7 @@ module Campfire
           connection.busy_handler { |count| sleep(0.002); count < 2500 }
           connection.execute("PRAGMA foreign_keys = ON")
           connection.execute("PRAGMA synchronous = NORMAL")
+          connection.execute("PRAGMA wal_autocheckpoint = 0") unless ENV["RACK_ENV"] == "test"
           connection.execute("PRAGMA cache_size = -16000")
           connection.execute("PRAGMA temp_store = MEMORY")
         })

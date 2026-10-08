@@ -8,13 +8,15 @@ module Campfire
       def user_routes(r)
         r.on "me" do
           r.get "sidebar" do
-            view = ui
-            data = repo.sidebar(@user)
-            assigns = view.context.sidebar(data)
-            # CSRF masks vary per render; validators instead include all sidebar
-            # records and user presentation timestamps, after authorization.
-            fingerprint = JSON.generate([@user.id, data, db[:users].max(:updated_at), repo.account[:updated_at]])
-            conditional_html(view.page("users/sidebars/show", assigns), fingerprint: fingerprint)
+            cached_read do
+              view = ui
+              data = repo.sidebar(@user)
+              assigns = view.context.sidebar(data)
+              # Validators include all sidebar
+              # records and user presentation timestamps, after authorization.
+              fingerprint = JSON.generate([@user.id, data, db[:users].max(:updated_at), repo.account[:updated_at]])
+              conditional_html(view.page("users/sidebars/show", assigns), fingerprint: fingerprint)
+            end
           end
           r.on "push_subscriptions" do
             r.get(true) do

@@ -51,15 +51,30 @@ module Campfire
         locals = locals.merge(values)
         key = (as || File.basename(name).delete_prefix("_")).to_sym
         if collection
-          safe_join(collection.map { |item| ENGINE.render(self, name, locals.merge(key => item), partial: true) })
+          safe_join(collection.map { |item| render_partial(name, locals.merge(key => item)) })
         else
           locals = locals.merge(key => object) if object
+          render_partial(name, locals)
+        end
+      end
+
+      def render_partial(name, locals)
+        message = locals[:message] if name == "messages/message"
+        store = context.container.fragment_cache
+        if message && store.enabled? && !context.container.db.in_transaction? &&
+            !message.room.direct? && !message.attachment? && !message.body.to_s.include?("<action-text-attachment")
+          dependencies = [request.base_url, request.script_name, current.user&.id, message.attributes,
+            message.room.attributes.slice(:id, :type, :name), message.creator.attributes,
+            message.boosts.ordered.map { |boost| [boost.attributes, boost.booster.attributes] }]
+          key = Digest::SHA256.hexdigest(Marshal.dump(dependencies))
+          store.fetch(key) { ENGINE.render(self, name, locals, partial: true) }
+        else
           ENGINE.render(self, name, locals, partial: true)
         end
       end
 
-      # Roda deliberately renders every response; this wrapper keeps the original
-      # partial boundaries without bringing in Rails' fragment cache API.
+      # Keep original template boundaries. Content-addressed message fragments
+      # are admitted explicitly above; arbitrary legacy cache blocks stay live.
       def cache(*) = yield
       def params = @params ||= request.params.transform_keys(&:to_sym)
       def flash = @flash

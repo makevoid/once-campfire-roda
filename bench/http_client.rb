@@ -1,4 +1,4 @@
-require "cgi"
+require "cgi/escape"
 require "net/http"
 
 class BenchmarkHTTPClient
@@ -19,13 +19,12 @@ class BenchmarkHTTPClient
       raise "sign-in page: HTTP #{response.code}" unless response.code == "200"
       merge_cookies(cookies, response)
       token = response.body[/<meta name="csrf-token" content="([^"]*)"/, 1]
-      raise "sign-in page has no CSRF token" unless token
       request = Net::HTTP::Post.new("/session")
       request["Cookie"] = cookie_header(cookies)
       request["Origin"] = @base.to_s
       request["Sec-Fetch-Site"] = "same-origin"
       request.set_form_data(email_address: labels.fetch("emails.david"), password: labels.fetch("passwords.all"),
-        authenticity_token: CGI.unescapeHTML(token))
+        authenticity_token: CGI.unescapeHTML(token.to_s))
       response = http.request(request)
       merge_cookies(cookies, response)
       raise "login failed: HTTP #{response.code}" unless response.code == "302" && cookies.key?("session_token")

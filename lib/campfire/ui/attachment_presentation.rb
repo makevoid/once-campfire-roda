@@ -30,8 +30,10 @@ class AttachmentPresentation
     def render_preview
       if message.attachment.video?
         video_preview_tag
-      else
+      elsif preview_ready?
         lightboxed_image_preview_tag
+      else
+        render_link
       end
     end
 
@@ -40,9 +42,13 @@ class AttachmentPresentation
 
       inline_media_dimension_constraints(width, height) do
         tag.video \
-          src: file_url(message.attachment), poster: url_for(message.attachment.preview(format: :webp, resize_to_limit: [ 1200, 800 ])),
+          src: file_url(message.attachment), poster: (url_for(message.attachment.representation(:thumb)) if preview_ready?),
           controls: true, preload: :none, width: "100%", height: "100%", class: "message__attachment"
       end
+    end
+
+    def preview_ready?
+      context.context.container.media.existing_variant(message.attachment.attributes, :thumb)
     end
 
     def lightboxed_image_preview_tag

@@ -8,9 +8,12 @@ require "timeout"
 require "web_push"
 require "tempfile"
 require "rack/mime"
+require_relative "push_connections"
 
 module Campfire
   class OutboundHTTP
+    def initialize(connections: nil) = @connections = connections
+
     BLOCKED = %w[0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.0.0/24 192.0.2.0/24 192.168.0.0/16 198.18.0.0/15 198.51.100.0/24 203.0.113.0/24 224.0.0.0/3 2001:db8::/32].map { |net| IPAddr.new(net) }.freeze
     IPV6_GLOBAL = IPAddr.new("2000::/3")
 
@@ -50,16 +53,19 @@ module Campfire
       request.body = body
       result = nil
       Timeout.timeout(10) do
-        http.start do |connection|
-          connection.request(request) do |response|
-            data = +""
-            response.read_body do |chunk|
-              raise Error, "Endpoint response is too large" if data.bytesize + chunk.bytesize > max_bytes
-              data << chunk
-            end
-            response.body = data
-            result = response
+        consume = proc do |response|
+          data = +""
+          response.read_body do |chunk|
+            raise Error, "Endpoint response is too large" if data.bytesize + chunk.bytesize > max_bytes
+            data << chunk
           end
+          response.body = data
+          result = response
+        end
+        if @connections && !allow_private
+          @connections.request(http, request, &consume)
+        else
+          http.start { |connection| connection.request(request, &consume) }
         end
       end
       result
@@ -67,9 +73,13 @@ module Campfire
   end
 
   class PushRequest < WebPush::Request
+    CONNECTIONS = PushConnections.new
+    HTTP = OutboundHTTP.new(connections: CONNECTIONS)
+    at_exit { CONNECTIONS.shutdown }
+
     def perform
       PushPolicy.validate!(uri.to_s, resolve: false)
-      response = OutboundHTTP.new.post(uri.to_s, headers: headers, body: body)
+      response = HTTP.post(uri.to_s, headers: headers, body: body)
       verify_response(response)
     end
   end
@@ -120,8 +130,9 @@ module Campfire
         case job[:kind]
         when "fanout" then fanout(payload.fetch("message_id"))
         when "webhook" then webhook(payload.fetch("message_id"), payload.fetch("user_id"))
-        when "push" then push(payload.fetch("message_id"), payload.fetch("subscription_id"))
+        when "push" then push(payload.fetch("message_id"), payload.fetch("subscription_id"), badge: payload["badge"])
         when "push_test" then push_test(payload.fetch("subscription_id"))
+        when "destroy_room" then destroy_room(payload.fetch("room_id"))
         else raise Error, "Unknown job kind"
         end
         @queue.finish(job)
@@ -132,20 +143,39 @@ module Campfire
       true
     end
 
+    def destroy_room(room_id)
+      loop do
+        ids = @db[:messages].where(room_id: room_id).order(:id).limit(100).select_map(:id)
+        break if ids.empty?
+        ids.each { |id| @db.transaction(mode: :immediate) { @db[:messages].where(id: id, room_id: room_id).delete } }
+      end
+      @db.transaction(mode: :immediate) { @db[:rooms].where(id: room_id).delete }
+    end
+
     def fanout(message_id)
       message = @db[:messages][id: message_id]
       return unless message
       room = @db[:rooms][id: message[:room_id]]
       sender = @db[:users][id: message[:creator_id]]
       @db.transaction(mode: :immediate) do
+        mention_ids = @service.mentioned_user_ids(message[:body])
+        push_users = []
         recipients(message).each do |recipient|
-          mention = mentioned?(message, recipient)
+          mention = mention_ids.include?(recipient[:id])
           if recipient[:role] == 2 && sender[:role] != 2 && (room[:type] == "Rooms::Direct" || mention) && @db[:webhooks].where(user_id: recipient[:id]).any?
             @queue.enqueue("webhook", {message_id: message_id, user_id: recipient[:id]}, key: "webhook:#{message_id}:#{recipient[:id]}")
           elsif eligible_push?(recipient, mention)
-            @db[:push_subscriptions].where(user_id: recipient[:id]).select_map(:id).each do |id|
-              @queue.enqueue("push", {message_id: message_id, subscription_id: id}, key: "push:#{message_id}:#{id}")
-            end
+            push_users << recipient[:id]
+          end
+        end
+        @db[:push_subscriptions].where(user_id: push_users).order(:id).each_slice(1000) do |batch|
+          # Match the delivery batch's unread state, without counting once per
+          # device. No payload or badge query is made for an empty audience.
+          badges = @db[:memberships].where(user_id: batch.map { |sub| sub[:user_id] }).exclude(unread_at: nil)
+            .group_and_count(:user_id).to_hash(:user_id, :count)
+          batch.each do |subscription|
+            id = subscription[:id]
+            @queue.enqueue("push", {message_id: message_id, subscription_id: id, badge: badges.fetch(subscription[:user_id], 0)}, key: "push:#{message_id}:#{id}")
           end
         end
       end
@@ -183,7 +213,7 @@ module Campfire
       @service.post_message(User.new(recipient), room[:id], {"body" => "Failed to respond within 7 seconds", "client_message_id" => "webhook-#{user_id}-#{message_id}"}) if recipient && room
     end
 
-    def push(message_id, subscription_id)
+    def push(message_id, subscription_id, badge: nil)
       return if ENV["VAPID_PRIVATE_KEY"].to_s.empty? || ENV["VAPID_PUBLIC_KEY"].to_s.empty?
       message = @db[:messages][id: message_id]
       subscription = @db[:push_subscriptions][id: subscription_id]
@@ -194,7 +224,7 @@ module Campfire
       room = @db[:rooms][id: message[:room_id]]
       direct = room[:type] == "Rooms::Direct"
       deliver_push(subscription, title: direct ? sender[:name] : room[:name],
-        body: direct ? message[:plain_text] : "#{sender[:name]}: #{message[:plain_text]}", path: "/rooms/#{room[:id]}")
+        body: direct ? message[:plain_text] : "#{sender[:name]}: #{message[:plain_text]}", path: "/rooms/#{room[:id]}", badge: badge)
     end
 
     def push_test(subscription_id)
@@ -203,9 +233,9 @@ module Campfire
       deliver_push(subscription, title: "Campfire Test", body: SecureRandom.uuid, path: "/users/me/push_subscriptions")
     end
 
-    def deliver_push(subscription, title:, body:, path:)
+    def deliver_push(subscription, title:, body:, path:, badge: nil)
       return if ENV["VAPID_PRIVATE_KEY"].to_s.empty? || ENV["VAPID_PUBLIC_KEY"].to_s.empty?
-      badge = @db[:memberships].where(user_id: subscription[:user_id]).exclude(unread_at: nil).count
+      badge ||= @db[:memberships].where(user_id: subscription[:user_id]).exclude(unread_at: nil).count
       @push_class.new(message: JSON.generate(title: title, options: {body: body, icon: "/account/logo", data: {path: path, badge: badge}}),
         subscription: {endpoint: subscription[:endpoint], keys: {p256dh: subscription[:p256dh_key], auth: subscription[:auth_key]}},
         vapid: {subject: ENV.fetch("VAPID_SUBJECT", "mailto:admin@example.com"), public_key: ENV["VAPID_PUBLIC_KEY"], private_key: ENV["VAPID_PRIVATE_KEY"]}, urgency: "high").perform

@@ -15,8 +15,14 @@ module Campfire
       attr_reader :records
       def initialize(rows, page, per_page: 20)
         @number = [page.to_i, 1].max
-        @last = @number * per_page >= rows.length
-        @records = rows.slice((@number - 1) * per_page, per_page) || []
+        if rows.is_a?(Sequel::Dataset)
+          portion = rows.limit(per_page + 1, (@number - 1) * per_page).all
+          @last = portion.length <= per_page
+          @records = portion.first(per_page)
+        else
+          @last = @number * per_page >= rows.length
+          @records = rows.slice((@number - 1) * per_page, per_page) || []
+        end
       end
       def last? = @last
       def next_param = (@number + 1).to_s
@@ -143,7 +149,6 @@ module Campfire
     end
 
     class Message < Record
-      def to_key = self[:client_message_id] ? [self[:client_message_id]] : nil
       def to_param = id&.to_s
       def body = Body.new(@attributes)
       def plain_text_body = self[:plain_text].to_s

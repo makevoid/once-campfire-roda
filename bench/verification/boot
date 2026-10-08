@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+export DATABASE_PATH=/rails/storage/db/roda.sqlite3
+export UPLOAD_ROOT=/rails/storage/files/roda
+export PORT="${HTTP_PORT:-25130}"
+export HOST=0.0.0.0
+export MAX_THREADS="${RAILS_MAX_THREADS:-5}"
+export DB_POOL="$MAX_THREADS"
+export SESSION_SECRET="$SECRET_KEY_BASE"
+if [ ! -f "$DATABASE_PATH" ]; then
+  bundle exec ruby bin/import-rails --source /rails/storage/db/production.sqlite3 --destination "$DATABASE_PATH" --storage /rails/storage/files --files "$UPLOAD_ROOT"
+fi
+bundle exec ruby bin/worker &
+worker=$!
+trap 'kill -TERM "$worker" 2>/dev/null || true' EXIT
+bundle exec puma -C config/puma.rb &
+web=$!
+trap 'kill -TERM "$worker" "$web" 2>/dev/null || true; wait' TERM INT
+wait "$web"

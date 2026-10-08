@@ -1,6 +1,8 @@
 # Benchmarks
 
-These exercise the same four HTTP paths as `tmp/once-campfire/bench`, plus the unread fanout computation. `http_client.rb` is copied unchanged from that source. The original Docker comparison scripts are Rails-specific (Rails runner, compiled assets, Action Cable, Redis); the drivers here adapt the workload to Roda.
+The current, response-verified Rails/Roda comparison uses the public shared harness. See [setup and reproduction](verification/README.md) and [results](../docs/performance.md). Start with `ruby bin/benchmark --prepare`; it defaults to Rails versus Roda. The local renderer probes and older comparison below remain useful for profiling and reproducing historical revisions.
+
+The legacy probes below exercise four HTTP paths plus the unread fanout computation. Their Ruby HTTP client originated in Campfire and now also accepts token-free login pages. To profile rendering without either cache, set `CAMPFIRE_RESPONSE_CACHE_MB=0 CAMPFIRE_FRAGMENT_CACHE_MB=0`; the probe records its cache settings and excludes observer PRAGMAs from the Sequel query counter.
 
 ```sh
 bundle exec ruby bench/seed.rb --output tmp/bench-seed --messages 2000 --users 100
@@ -12,7 +14,7 @@ The seed command refuses to overwrite an existing database. The two runners snap
 
 ## In-process probe
 
-`message_hot_paths.rb` runs the actual Rack application with login and CSRF enabled. It records individual wall times, SQL counts, allocations, response bytes, and response SHA-256 fingerprints. Only randomized CSRF token and CSP nonce values are normalized for fingerprint stability. It performs 20 warmup requests per path. There is no application cache to distinguish a cold/warm mode; these results describe warm Ruby and SQLite operation.
+`message_hot_paths.rb` runs the actual Rack application with normal login and browser forgery protection. It records individual wall times, SQL counts, allocations, response bytes, response SHA-256 fingerprints and cache settings. Its legacy normalization accepts old CSRF tokens and CSP nonces; current forms are token-free and use static CSP script hashes. It performs 20 warmup requests per path, so enabled caches are warm during measurement. Disable both stores with the environment settings above to profile uncached rendering.
 
 The fanout probe encodes `{roomId: id}` once and emits it to 1,000 private stream names through a capturing adapter. It measures **fanout computation only**, not Web Push, polling, Redis, or network delivery. The production implementation uses authenticated WebSockets backed by SQLite events, plus a background delivery queue.
 
@@ -22,7 +24,7 @@ The [renderer optimization report](../docs/renderer-optimization.md) includes co
 
 By default `compare_http.rb` starts an isolated production Puma process on a random loopback port, with five threads, no cluster workers, a five-connection pool, and normal session/CSRF checks. It stops only the child server it started. Each client uses a persistent connection, disables compression, and consumes the response body. Warmup and measured requests must all be HTTP 200 without transport errors.
 
-Server options include `--workers`, `--threads`, and `--db-pool`. `--warmup-concurrency` warms multiple workers, and `--client-processes` divides the total client concurrency across Ruby processes while using the unchanged request client. It pools raw latency samples before calculating percentiles; startup is synchronized and elapsed time includes result transfer to the parent.
+Server options include `--workers`, `--threads`, and `--db-pool`. `--warmup-concurrency` warms multiple workers, and `--client-processes` divides the total client concurrency across Ruby processes using the legacy Ruby client. It pools raw latency samples before calculating percentiles; startup is synchronized and elapsed time includes result transfer to the parent.
 
 Options include `--paths room,messages,sidebar,search`, `--concurrencies 1,16`, `--duration`, `--warmup`, `--rounds` (positive/even), and `--output`. Use `--url` to measure a server you already started instead; the supplied fixture credentials must work on that server.
 
@@ -42,11 +44,13 @@ ruby bench/compare_http.rb --seed tmp/bench-matching-rails \
 
 This alternates baseline/Roda order each round and records response size, requests/sec, p50/p95/p99, errors, and statuses. It does not provision/reset a Rails server. For a fair comparison, prepare equivalent data, run both on the same machine with matching server/client CPU allocations and Ruby/JIT settings, and keep other traffic off both servers. The request client can become CPU-bound; report that alongside results.
 
-The original frontend is ported to native Erubi templates. The HTML is not byte-identical: independent helpers, signed URLs, whitespace and CSRF values differ. The live audit compares message element counts, frontend actions, reaction forms and frame IDs as well as content and authorization. Compare response sizes as well as raw throughput. Do not compare local numbers to the upstream README's different hardware as if they were a controlled experiment. Neither a Rack timing nor its reciprocal is a measured HTTP throughput result.
+The original frontend is ported to native Erubi templates. The HTML is not byte-identical: independent helpers, signed URLs, whitespace and generated attributes differ. The live audit compares message element counts, frontend actions, reaction forms and frame IDs as well as content and authorization. Compare response sizes as well as raw throughput. Do not compare local numbers to the upstream README's different hardware as if they were a controlled experiment. Neither a Rack timing nor its reciprocal is a measured HTTP throughput result.
 
 JSON files default to ignored `bench/results/`. The implementation's SQL/index/concurrency invariants also run under `bundle exec rake test`.
 
 ## Reproduce the recorded Rails comparison
+
+This section describes the **historical 2026-10-06 runner and reference**. Use a separate checkout of the corresponding Roda revision to reproduce those results. For the current production comparison, use [the shared harness](verification/README.md).
 
 The checked-in [`rails/run.rb`](rails/run.rb) provisions disposable Rails/Roda databases, production Puma servers, and a dedicated Redis process. Install Ruby 4.0, Redis (`redis-server` on `PATH`), libvips, FFmpeg, Poppler, and both locked bundles first. Run from this repository with the desired Ruby on `PATH`; use plain `ruby` for the orchestrator so it can select each app's bundle independently.
 
@@ -74,7 +78,7 @@ The harness leaves the source checkout untouched, precompiles assets in a tempor
 
 Results include runtime/source metadata, a digest of Roda's runtime files, all round measurements, verification, server logs, and one-second resource samples including each server’s master and worker descendants. Summed RSS counts shared copy-on-write pages in each process and is not unique physical memory usage. The local Rails source is required only for this comparison, not for running the Roda app or its unit tests. The full audit is not included in ordinary CI because it requires both applications, libvips, and Redis.
 
-The current comparison is documented in [recorded performance](../docs/performance.md#live-rails-and-roda-comparison). The earlier partial-port results remain in `recorded/2026-10-06/` as historical evidence and are not the current frontend's results.
+The historical comparison is documented in [the 2026-10-06 report](../docs/performance-2026-10-06.md). The earlier partial-port results remain in `recorded/2026-10-06/` as historical evidence. [Current measurements](../docs/performance.md) use the shared Rust client instead.
 
 ## Browser and WebSocket audits
 

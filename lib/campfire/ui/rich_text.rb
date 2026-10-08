@@ -42,6 +42,18 @@ module Campfire
         elsif id = @view.context.container.tokens.verify(node["sgid"], purpose: :mention)
           user = @view.context.user(id)
           [@view.render("users/mention", user: user), MENTION_TYPE]
+        elsif file = @view.context.container.tokens.verify(node["sgid"], purpose: :rich_file)
+          # Embedded files display their name and size; only a message's own
+          # attachment has a preview. Never generate variants while rendering.
+          caption = if node["caption"]
+            @view.tag.figcaption(node["caption"], class: "attachment__caption")
+          else
+            @view.tag.figcaption(class: "attachment__caption") do
+              @view.tag.span(file.fetch("filename"), class: "attachment__name") +
+                @view.tag.span(human_size(file.fetch("byte_size")), class: "attachment__size")
+            end
+          end
+          [@view.tag.figure(caption, class: "attachment attachment--file"), node["content-type"]]
         else
           [@view.tag.figure("Missing attachment", class: "attachment attachment--missing"), "application/octet-stream"]
         end
@@ -59,6 +71,16 @@ module Campfire
           Embed.new(web_url(link&.[]("href")), web_url(content.at_css(".og-embed__image img")&.[]("src")),
             (link || title)&.text.to_s.strip, content.at_css(".og-embed__description")&.text.to_s.strip)
         end
+      end
+
+      def human_size(bytes)
+        units = %w[Bytes KB MB GB TB PB EB]
+        value, index = bytes.to_f, 0
+        while value >= 1024 && index < units.length - 1
+          value /= 1024
+          index += 1
+        end
+        "#{index.zero? ? bytes.to_i : format('%.3g', value)} #{units[index]}"
       end
 
       def web_url(value)

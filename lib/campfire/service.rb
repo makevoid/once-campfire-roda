@@ -35,8 +35,11 @@ module Campfire
       name = required(attributes["name"], "Name", 100)
       id = db[:users].insert(name: name, email_address: role == 2 ? nil : email,
         password_digest: digest, role: role, bot_token: role == 2 ? SecureRandom.hex(24) : nil, created_at: now, updated_at: now)
-      room_ids = db[:rooms].where(type: "Rooms::Open").select_map(:id)
-      room_ids.each { |room_id| grant(room_id, [id]) }
+      db.run(db.literal(Sequel.lit(<<~SQL, id, now, now)))
+        INSERT INTO memberships (room_id, user_id, created_at, updated_at)
+        SELECT id, ?, ?, ? FROM rooms WHERE type = 'Rooms::Open'
+        ON CONFLICT DO NOTHING
+      SQL
       repo.user(id)
     end
 
@@ -96,7 +99,11 @@ module Campfire
         raise Error.new("Room not found", 404) if direct_only && !room.direct?
         administer!(actor, room) unless direct_only
         notify_sidebar(db[:memberships].where(room_id: room.id).select_map(:user_id))
-        db[:rooms].where(id: room.id).delete
+        # Revoke access immediately. The worker releases the write lock between
+        # messages so a large room's removal cannot stall unrelated writers.
+        db[:rooms].where(id: room.id).update(type: "Rooms::Closed", direct_key: nil, updated_at: Time.now.utc)
+        db[:memberships].where(room_id: room.id).delete
+        JobQueue.new(db).enqueue("destroy_room", {room_id: room.id}, key: "destroy_room:#{room.id}")
       end
     end
 
@@ -123,8 +130,10 @@ module Campfire
           body: content.html, plain_text: content.text.empty? ? upload&.fetch(:filename).to_s : content.text, created_at: now, updated_at: now)
         db[:attachments].insert(upload.merge(message_id: id, created_at: now)) if upload
         touch_room(room.id, now)
-        db[:memberships].where(room_id: room.id).exclude(user_id: actor.id).exclude(involvement: "invisible")
-          .where(Sequel.|({connected_at: nil}, Sequel[:connected_at] < now - 60)).update(unread_at: now, updated_at: now)
+        recipients = db[:memberships].where(room_id: room.id).exclude(user_id: actor.id).exclude(involvement: "invisible")
+          .where(Sequel.|({connected_at: nil}, Sequel[:connected_at] < now - 60))
+        recipients = recipients.where(unread_at: nil) unless room.direct?
+        recipients.update(unread_at: now, updated_at: now)
         event(room.id, id, "create", now)
         JobQueue.new(db).enqueue("fanout", {message_id: id}, key: "fanout:#{id}")
         repo.message(room.id, id)
@@ -136,7 +145,7 @@ module Campfire
     end
 
     def mentioned_user_ids(body)
-      return [] unless @tokens
+      return [] unless @tokens && body.to_s.include?("<action-text-attachment")
       Nokogiri::HTML5.fragment(body.to_s).css("action-text-attachment[sgid]").filter_map do |node|
         id = @tokens.verify(node["sgid"], purpose: :mention)
         id if id.is_a?(Integer)
@@ -148,6 +157,8 @@ module Campfire
         id = @tokens&.verify(token, purpose: :mention)
         if id.is_a?(Integer) && (name = db[:users].where(id: id).get(:name))
           "@#{name}"
+        elsif file = @tokens&.verify(token, purpose: :rich_file)
+          file["filename"]
         end
       end)
     end
@@ -254,7 +265,7 @@ module Campfire
           end
           db[:sessions].where(user_id: user_id).delete
           db[:searches].where(user_id: user_id).delete
-          db[:push_subscriptions].where(user_id: user_id).delete
+          db[:push_subscriptions].where(user_id: user_id).delete if action == :deactivate
           changes = {status: action == :ban ? 2 : 1, updated_at: now}
           changes[:email_address] = target[:email_address]&.gsub("@", "-deactivated-#{SecureRandom.uuid}@") if action == :deactivate
           db[:users].where(id: user_id).update(changes)

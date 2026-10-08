@@ -41,7 +41,7 @@ module Campfire
         since = Time.at(repo.integer(request.params.fetch("since", "0")) / 1000.0).utc
         rows = db[:messages].where(room_id: @room.id)
         created = rows.where { created_at > since }.order(:created_at, :id).limit(40).all
-        updated = rows.exclude(id: created.map { |row| row[:id] }).where { updated_at > since }.reverse_order(:created_at, :id).limit(40).all.reverse
+        updated = rows.exclude(id: created.map { |row| row[:id] }).where { updated_at > since }.reverse_order(Sequel.lit("+messages.created_at"), :id).limit(40).all.reverse
         page = repo.present(created + updated)
         json(api_messages(page)) if wants_json?
         view = ui(page: page)
@@ -51,7 +51,7 @@ module Campfire
           output << stream("append", "messages_room_#{@room.id}", html)
         end
         updated.each do |row|
-          output << stream("replace", "message_#{row[:client_message_id]}", view.render(view.context.message(row[:id])))
+          output << stream("replace", "message_#{row[:id]}", view.render(view.context.message(row[:id])))
         end
         response["content-type"] = "text/vnd.turbo-stream.html; charset=utf-8"
         output
@@ -59,7 +59,7 @@ module Campfire
 
       def account_users_page
         view = ui
-        rows = db[:users].where(status: 0).exclude(role: 2).order(Sequel.function(:lower, :name)).all
+        rows = visible_account_users.where(role: 0)
         page = UI::Pagination.new(rows, request.params["page"], per_page: 500)
         users = page.records.map { |row| UI::User.new(row, view.context) }
         output = stream("replace", "next_page_container", view.render(partial: "accounts/users/user", collection: users, as: :user))

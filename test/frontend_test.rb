@@ -11,8 +11,8 @@ class FrontendTest < CampfireTest
     stream = Nokogiri::HTML5.fragment(last_response.body).at_css("turbo-stream")
     assert_equal "append", stream["action"]
     assert_equal "messages_room_#{room.id}", stream["target"]
-    assert stream.at_css("#message_browser-one")
     id = db[:messages].max(:id)
+    assert stream.at_css("#message_#{id}")
     header "Accept", "text/html"
     ["/rooms/#{room.id}/messages/#{id}", "/rooms/#{room.id}/messages/#{id}/edit", "/messages/#{id}/boosts/new", "/messages/#{id}/boosts"].each do |path|
       get path
@@ -22,7 +22,7 @@ class FrontendTest < CampfireTest
     header "Accept", "text/vnd.turbo-stream.html"
     mutate(:delete, "/rooms/#{room.id}/messages/#{id}")
     assert_equal 200, last_response.status
-    assert_equal "message_browser-one", Nokogiri::HTML5.fragment(last_response.body).at_css("turbo-stream[action=remove]")["target"]
+    assert_equal "message_#{id}", Nokogiri::HTML5.fragment(last_response.body).at_css("turbo-stream[action=remove]")["target"]
   end
 
   def test_autocomplete_scopes_mentions_to_room_and_escapes_names

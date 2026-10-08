@@ -6,7 +6,7 @@
   </figure>
   <span role="button" class="txt-small <%= 'txt-medium' if emoji_only?(boost.content) %>" data-action="click->boost-delete#reveal keydown.enter->boost-delete#reveal:prevent" data-boost-delete-target="content"><%= boost.content %></span>
   <form action="/messages/<%= boost[:message_id] %>/boosts/<%= boost.id %>" method="post">
-    <input type="hidden" name="authenticity_token" value="<%= @csrf %>"><input type="hidden" name="_method" value="delete">
+    <input type="hidden" name="_method" value="delete">
     <button type="submit" data-action="boost-delete#perform" data-boost-delete-target="button" class="btn btn--negative flex-item-justify-end boost__delete">
       <img src="<%= asset_path('minus.svg') %>" width="20" height="20" aria-hidden="true">
       <span class="for-screen-reader">Delete this boost</span>

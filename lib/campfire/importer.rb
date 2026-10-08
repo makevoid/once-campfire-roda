@@ -21,7 +21,7 @@ module Campfire
         %i[accounts users rooms memberships].each { |table| copy_table(table) }
         @source[:messages].order(:id).each do |row|
           text = @source[:action_text_rich_texts].where(record_type: "Message", record_id: row[:id], name: "body").get(:body)
-          content = @target.service.message_content(rewrite_mentions(text))
+          content = @target.service.message_content(rewrite_attachables(text))
           @db[:messages].insert(row.merge(body: content.html, plain_text: content.text).slice(*columns(:messages)))
         end
         @counts[:messages] = @db[:messages].count
@@ -51,6 +51,7 @@ module Campfire
       @source[table].order(:id).each do |row|
         row = row.slice(*selected)
         row[:settings] ||= "{}" if table == :accounts
+        row[:messages_count] = 0 if table == :rooms
         row[:email_address] = row[:email_address]&.downcase if table == :users
         @db[table].insert(row)
       end
@@ -80,6 +81,7 @@ module Campfire
           byte_size: File.size(source), metadata: blob[:metadata].to_s.empty? ? "{}" : blob[:metadata], created_at: attachment[:created_at]}
         if type == "Message"
           @db[:attachments].insert(values.merge(message_id: owner_id))
+          @target.media.variant(values, :thumb)
           message = @db[:messages][id: owner_id]
           @db[:messages].where(id: owner_id).update(plain_text: blob[:filename]) if message[:plain_text].empty?
         else
@@ -91,9 +93,9 @@ module Campfire
     end
 
     # The user explicitly selected this local Rails database for migration. Only
-    # User global IDs are recovered, then signed with this installation's key.
+    # User IDs and embedded-file metadata are signed with this installation's key.
     # Legacy Marshal payloads are scanned as bytes, never deserialized as Ruby.
-    def rewrite_mentions(body)
+    def rewrite_attachables(body)
       fragment = Nokogiri::HTML5.fragment(body.to_s)
       fragment.css("action-text-attachment[sgid]").each do |node|
         encoded = node["sgid"].to_s.split("--", 2).first
@@ -101,11 +103,20 @@ module Campfire
         begin
           envelope = JSON.parse(Base64.urlsafe_decode64(encoded)).fetch("_rails", {})
           gid = envelope["data"]
-          gid ||= Base64.urlsafe_decode64(envelope["message"]).match(%r{gid://campfire/User/\d+})&.to_s if envelope["message"]
-          match = %r{\Agid://campfire/User/(\d+)(?:\?|\z)}.match(gid.to_s)
-          next unless match && @db[:users][id: match[1].to_i]
-          node["sgid"] = @target.tokens.generate(match[1].to_i, purpose: :mention)
-          node["content-type"] = "application/vnd.campfire.mention"
+          gid ||= Base64.urlsafe_decode64(envelope["message"]).match(%r{gid://campfire/(?:User|ActiveStorage::Blob)/\d+})&.to_s if envelope["message"]
+          match = %r{\Agid://campfire/(User|ActiveStorage::Blob)/(\d+)(?:\?|\z)}.match(gid.to_s)
+          next unless match
+          id = match[2].to_i
+          if match[1] == "User" && @db[:users][id: id]
+            node["sgid"] = @target.tokens.generate(id, purpose: :mention)
+            node["content-type"] = "application/vnd.campfire.mention"
+          elsif match[1] == "ActiveStorage::Blob" && @source.table_exists?(:active_storage_blobs) && (blob = @source[:active_storage_blobs][id: id])
+            metadata = {filename: blob[:filename], byte_size: blob[:byte_size].to_i}
+            node["sgid"] = @target.tokens.generate(metadata, purpose: :rich_file)
+            node["content-type"] = blob[:content_type] || "application/octet-stream"
+          else
+            next
+          end
           node.remove_attribute("content")
         rescue JSON::ParserError, ArgumentError, TypeError
           # The renderer displays invalid or unknown attachments as missing.

@@ -1,0 +1,84 @@
+#!/usr/bin/env ruby
+# Run the public response-verifying client against production Rails and Roda.
+require "json"
+require "fileutils"
+require "open3"
+require "tmpdir"
+
+root = File.expand_path("..", __dir__)
+pins = JSON.parse(File.read(File.join(root, "bench/verification/sources.json")))
+verification = File.expand_path(ENV.fetch("VERIFICATION_SOURCE", File.join(root, "tmp/once-campfire-verification")))
+rails = File.expand_path(ENV.fetch("RAILS_SOURCE", File.join(root, "tmp/once-campfire")))
+prepare_only = ARGV.delete("--prepare-only")
+prepare = ARGV.delete("--prepare") || prepare_only
+if ARGV.include?("--help") && !File.exist?(File.join(verification, "bench/compare.rb"))
+  puts "bin/benchmark --prepare [shared benchmark options]\n--prepare-only builds images and fixtures without measuring. Defaults: Rails vs Roda, 3 rounds, 8 seconds, 16 clients."
+  exit
+end
+
+def capture(*args)
+  output, errors, status = Open3.capture3(*args)
+  abort "#{args.first} failed: #{errors}" unless status.success?
+  output
+end
+
+def command(*args)
+  abort "#{args.first} failed" unless system(*args)
+end
+
+if prepare
+  FileUtils.mkdir_p(File.join(root, "tmp"))
+  [[verification, "makevoid/once-campfire-verification", pins.fetch("verification")],
+    [rails, "basecamp/once-campfire", pins.fetch("rails")]].each do |path, repository, revision|
+    unless File.exist?(File.join(path, ".git"))
+      command("gh", "repo", "clone", "git@github.com:#{repository}.git", path, "--", "--no-checkout")
+      command("git", "-C", path, "checkout", "--detach", revision)
+    end
+    abort "#{path} must be at pinned revision #{revision}" unless capture("git", "-C", path, "rev-parse", "HEAD").strip == revision
+  end
+  patch = File.join(root, "bench/verification/harness.patch")
+  if system("git", "-C", verification, "apply", "--reverse", "--check", patch, out: File::NULL, err: File::NULL)
+    puts "Verification adapter is already installed."
+  else
+    command("git", "-C", verification, "apply", "--check", patch)
+    command("git", "-C", verification, "apply", patch)
+  end
+end
+abort "Run bin/benchmark --prepare first" unless File.file?(File.join(verification, "bench/comparison_support.rb"))
+abort "Verification checkout differs from the pinned source; run --prepare with a fresh checkout" unless capture("git", "-C", verification, "rev-parse", "HEAD").strip == pins.fetch("verification")
+unless system("git", "-C", verification, "apply", "--reverse", "--check", File.join(root, "bench/verification/harness.patch"), out: File::NULL, err: File::NULL)
+  abort "Verification adapter is missing or differs; run bin/benchmark --prepare"
+end
+require File.join(verification, "bench/comparison_support")
+include BenchmarkSupport
+
+ENV["RAILS_SOURCE"] = rails
+ENV["RODA_SOURCE"] = root
+ENV["RAILS_IMAGE"] ||= "once-campfire:roda-comparison"
+ENV["RODA_IMAGE"] ||= "once-campfire-roda:verification"
+ENV["BENCH_CLIENT_IMAGE"] ||= "campfire-verification:local"
+
+if prepare
+  # Build Rails from its clean tracked tree; local bundle/cache files cannot
+  # accidentally enter its production image through the upstream COPY command.
+  abort "Rails reference has local edits" unless capture("git", "-C", rails, "status", "--porcelain", "--untracked-files=no").strip.empty?
+  Dir.mktmpdir("rails-build-", File.join(root, "tmp")) do |context|
+    archive = File.join(context, "source.tar")
+    command("git", "-C", rails, "archive", "--output", archive, "HEAD")
+    command("tar", "-xf", archive, "-C", context)
+    File.unlink(archive)
+    command("docker", "build", "--build-arg", "GIT_REVISION=#{pins.fetch('rails')}", "--build-arg", "APP_VERSION=verification",
+      "--label", "io.campfire.source.sha256=#{source_fingerprint(rails)}", "-t", ENV.fetch("RAILS_IMAGE"), context)
+  end
+  command("docker", "build", "--build-arg", "SOURCE_REVISION=#{capture('git', '-C', root, 'rev-parse', 'HEAD').strip}",
+    "--build-arg", "SOURCE_SHA256=#{source_fingerprint(root)}", "-t", "once-campfire-roda:app", root)
+  command("docker", "build", "-f", File.join(root, "bench/verification/App.Dockerfile"), "-t", ENV.fetch("RODA_IMAGE"), root)
+  command("docker", "build", "-f", File.join(root, "bench/verification/Dockerfile"), "-t", ENV.fetch("BENCH_CLIENT_IMAGE"), verification)
+  unless File.directory?(File.join(verification, "fixtures/default"))
+    command(RbConfig.ruby, File.join(verification, "bin/seed"))
+  end
+  exit if prepare_only
+end
+
+Dir.chdir(verification)
+exec RbConfig.ruby, File.join(verification, "bin/benchmark"), "--apps", "rails,roda", *ARGV

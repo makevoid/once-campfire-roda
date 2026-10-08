@@ -4,7 +4,7 @@ require_relative "test_helper"
 class AppTest < CampfireTest
   def test_health_setup_and_login
     get "/up"
-    assert_equal "OK", last_response.body
+    assert_includes last_response.body, "background-color: green"
     get "/rooms/#{room.id}"
     assert_equal 302, last_response.status
     sign_in
@@ -30,15 +30,17 @@ class AppTest < CampfireTest
     assert_equal 302, last_response.status
   end
 
-  def test_csrf_is_required_and_rotated_at_login
+  def test_cross_site_writes_are_rejected_without_token_fields
     get "/session/new"
-    old = csrf_from_response
+    refute_includes last_response.body, 'name="authenticity_token"'
+    refute_includes last_response.body, 'name="csrf-token"'
+    header "Sec-Fetch-Site", "cross-site"
     post "/session", {email_address: admin[:email_address], password: PASSWORD}
-    assert_equal 403, last_response.status
+    assert_equal 422, last_response.status
+    header "Sec-Fetch-Site", nil
     sign_in
-    refute_equal old, @csrf
     mutate(:post, "/rooms/#{room.id}/messages", {message: {body: "Oops"}}, csrf: false)
-    assert_equal 403, last_response.status
+    assert_equal 422, last_response.status
     assert_equal 0, db[:messages].count
   end
 
@@ -173,6 +175,10 @@ class AppTest < CampfireTest
     assert_equal 2, db[:rooms].count
     mutate(:delete, "/rooms/directs/#{first.id}")
     assert_equal 302, last_response.status
+    assert_equal 0, db[:memberships].where(room_id: first.id).count
+    assert_raises(Campfire::Error) { repo.room(member, first.id) }
+    delivery = Campfire::Delivery.new(container)
+    delivery.work_once while db[:jobs].any?
     assert_nil db[:rooms][id: first.id]
   end
 

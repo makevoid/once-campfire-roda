@@ -20,6 +20,8 @@ module Campfire
         names.transform_values { |name| "/assets/#{MANIFEST.fetch(name).fetch('digested_path')}" }.freeze
       end
       IMPORTMAP = JSON.generate(imports: IMPORTS).gsub("<", '\\u003c').freeze
+      APPLICATION_SCRIPT = 'import "application"'.freeze
+      SCRIPT_HASHES = [IMPORTMAP, APPLICATION_SCRIPT].map { |script| "'sha256-#{Base64.strict_encode64(Digest::SHA256.digest(script))}'" }.join(" ").freeze
       STYLESHEETS = MANIFEST.keys.grep(/\.css\z/).sort.freeze
 
       def asset_path(source)
@@ -35,8 +37,8 @@ module Campfire
 
       def javascript_importmap_tags
         safe_join([
-          tag.script(raw(IMPORTMAP), type: "importmap", nonce: @nonce, "data-turbo-track": "reload"),
-          tag.script(raw('import "application"'), type: "module", nonce: @nonce)
+          tag.script(raw(IMPORTMAP), type: "importmap", "data-turbo-track": "reload"),
+          tag.script(raw(APPLICATION_SCRIPT), type: "module")
         ], "\n")
       end
 

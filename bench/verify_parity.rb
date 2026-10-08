@@ -30,7 +30,7 @@ class ParitySession
     request["Accept-Encoding"] = "identity"
     unless method == "GET"
       request["Origin"] = @base.to_s
-      request["Sec-Fetch-Site"] = "same-origin"
+      request["Sec-Fetch-Site"] = csrf ? "same-origin" : "cross-site"
       request["X-CSRF-Token"] = @csrf if csrf
       request.set_form_data(params)
     end
@@ -180,7 +180,7 @@ sessions.each do |side, admin|
   post_path = "/rooms/#{room}/messages"
   count = db.get_first_value("SELECT COUNT(*) FROM messages")
   response = member.request("POST", post_path, csrf: false, params: {"message[body]" => "csrf-rejected"})
-  check.call("#{side}: missing CSRF rejected without a write", blocked.call(response) && db.get_first_value("SELECT COUNT(*) FROM messages") == count)
+  check.call("#{side}: cross-site write rejected", blocked.call(response) && db.get_first_value("SELECT COUNT(*) FROM messages") == count)
   response = member.request("POST", post_path, accept: "text/vnd.turbo-stream.html", params: {
     "message[body]" => "<p>parityneedle <strong>coffee</strong> &amp; tea</p>", "message[client_message_id]" => shared_token})
   check.call("#{side}: authenticated message create", ok.call(response))

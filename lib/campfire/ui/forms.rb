@@ -13,7 +13,7 @@ module Campfire
         attrs.delete(:local)
         fields = capture(Form.new(self, record, scope), &block) if block
         method = method.to_s
-        hidden = method == "get" ? raw("") : hidden_field_tag("authenticity_token", @csrf)
+        hidden = raw("")
         hidden = raw(hidden + hidden_field_tag("_method", method)) unless %w[get post].include?(method)
         element("form", raw(hidden + fields.to_s), {action: action, method: method == "get" ? "get" : "post", enctype: "multipart/form-data"}.merge(attrs))
       end

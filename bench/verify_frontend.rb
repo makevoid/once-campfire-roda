@@ -21,6 +21,7 @@ class FrontendSession
     req = klass.new(path)
     req["Cookie"], req["Accept"], req["Origin"] = cookie, accept, base.to_s
     req["X-CSRF-Token"] = @csrf if @csrf
+    req["Sec-Fetch-Site"] = "same-origin" unless method == :get
     req.set_form_data(values) if values
     response = Net::HTTP.start(base.host, base.port, nil, open_timeout: 3, read_timeout: 10) { |http| http.request(req) }
     response.get_fields("set-cookie").to_a.each do |header|
@@ -96,13 +97,13 @@ socket.subscribe("PresenceChannel", room_id: room)
 client_id = "live-test-#{Time.now.to_i}"
 response = session.request("/rooms/#{room}/messages", method: :post, accept: "text/vnd.turbo-stream.html", values: {"message[body]" => "Live Erubi frontend test", "message[client_message_id]" => client_id})
 check.call(response.code == "200", "message POST #{response.code}")
-check.call(response.body.include?("message_#{client_id}"), "HTTP Turbo append")
-packet = socket.wait { |item| item["message"].is_a?(String) && item["message"].include?("message_#{client_id}") }
-check.call(packet["message"].include?('action="append"'), "WebSocket Turbo append")
 id = Nokogiri::HTML5.fragment(response.body).at_css("[data-message-id]")["data-message-id"]
+check.call(response.body.include?("id=\"message_#{id}\""), "HTTP Turbo append")
+packet = socket.wait { |item| item["message"].is_a?(String) && item["message"].include?("id=\"message_#{id}\"") }
+check.call(packet["message"].include?('action="append"'), "WebSocket Turbo append")
 response = session.request("/rooms/#{room}/messages/#{id}", method: :delete, accept: "text/vnd.turbo-stream.html")
 check.call(response.code == "200", "message DELETE")
 packet = socket.wait { |item| item["message"].is_a?(String) && item["message"].include?('action="remove"') }
-check.call(packet["message"].include?("message_#{client_id}"), "WebSocket Turbo remove")
+check.call(packet["message"].include?("message_#{id}"), "WebSocket Turbo remove")
 socket.close
 puts JSON.pretty_generate(checks: checks, status: "passed", rendering: "Erubi", transport: "HTTP and WebSocket")

@@ -1,9 +1,11 @@
 # Frontend provenance
 
 The application views, presentation behavior, CSS, images, sounds, JavaScript
-controllers and the unchanged benchmark HTTP client originate from
+controllers and the legacy benchmark HTTP client originate from
 [37signals Campfire](https://github.com/basecamp/once-campfire), revision
 `d2155e85a01b8439c32a3604ebb7f39fea1ace0f`, under the [MIT license](MIT-LICENSE).
+The update through `05c5a2c0d72f7fd74d7c2ace23cc123000f956b9` ports the message, read-room, sidebar and file-uploader controllers plus current server behavior. The push-connection pool, TLS test helper and loader policy tests are adapted from that upstream source under the same MIT license. Original CSS/vendor assets remain from the initial reference.
+
 The views and helpers have been adapted to independent Ruby and Erubi. Frequently
 rendered message templates use direct HTML. The Roda application loads no Rails
 Ruby libraries.
@@ -42,3 +44,5 @@ Roda-specific changes to the original application JavaScript currently add an
 explicit user ID to mention matching. This allows the editor to highlight a
 mention even though avatar URLs use signed tokens. No frontend controls have
 been removed for the benchmarks.
+
+The shared benchmark runner comes from [makevoid/once-campfire-verification](https://github.com/makevoid/once-campfire-verification), pinned in `bench/verification/sources.json`. Its source attribution remains in the cloned files and checked-in adapter patch. The Rust client and response contracts are unchanged. The legacy Ruby HTTP client now accepts token-free Fetch Metadata login pages.

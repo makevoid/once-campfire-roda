@@ -16,8 +16,8 @@ module Campfire
       def service = container.service
 
       def ui(page: nil, flash: nil)
-        UI::View.new(container: container, actor: @user, request: request, csrf: csrf_token,
-          nonce: @nonce, page: page, last_room_id: session["last_room_id"], flash: flash || session.delete("flash")&.transform_keys(&:to_sym) || {})
+        UI::View.new(container: container, actor: @user, request: request, csrf: nil,
+          nonce: nil, page: page, last_room_id: session["last_room_id"], flash: flash || session.delete("flash")&.transform_keys(&:to_sym) || {})
       end
 
       def stream(action, target, html = "")

@@ -69,13 +69,13 @@ class MediaAndTransferTest < CampfireTest
     assert_equal css, repo.account[:custom_styles]
   end
 
-  def test_transfer_requires_valid_unexpired_purpose_bound_token_and_csrf
+  def test_transfer_requires_valid_unexpired_purpose_bound_token_and_same_origin
     token = container.tokens.generate(member.id, purpose: :transfer, expires_in: 14_400)
     get "/session/transfers/#{token}"
     assert_equal 200, last_response.status
     @csrf = csrf_from_response
     mutate(:put, "/session/transfers/#{token}", {}, csrf: false)
-    assert_equal 403, last_response.status
+    assert_equal 422, last_response.status
     get "/session/transfers/#{token}"
     @csrf = csrf_from_response
     mutate(:put, "/session/transfers/#{token}")

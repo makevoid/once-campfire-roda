@@ -1,6 +1,6 @@
-<% timestamp = epoch(message.created_at); key = message[:client_message_id]; creator = message.creator %>
+<% timestamp = epoch(message.created_at); key = message.id; creator = message.creator %>
 <div id="message_<%= key %>" class="message <%= 'message--emoji' if emoji_only?(message.plain_text_body) %>"
-    data-controller="reply" data-user-id="<%= creator.id %>" data-message-id="<%= message.id %>"
+    data-controller="reply" data-user-id="<%= creator.id %>" data-message-id="<%= message.id %>" data-client-message-id="<%= message[:client_message_id] %>"
     data-message-timestamp="<%= timestamp %>" data-message-updated-at="<%= epoch(message.updated_at) %>" data-sort-value="<%= timestamp %>"
     data-messages-target="message" data-search-results-target="message" data-refresh-room-target="message" data-reply-composer-outlet="#composer">
   <h2 class="message__day-separator"><time datetime="<%= message.created_at.iso8601 %>" data-local-time-target="date"></time></h2>

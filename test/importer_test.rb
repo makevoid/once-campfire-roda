@@ -36,6 +36,7 @@ class ImporterTest < CampfireTest
       String :filename
       String :content_type
       String :metadata
+      Integer :byte_size
     end
     source.create_table(:active_storage_attachments) do
       primary_key :id
@@ -55,6 +56,10 @@ class ImporterTest < CampfireTest
       blob = source[:active_storage_blobs].insert(key: key, filename: "#{name}.png", content_type: "image/png", metadata: '{"width":20,"height":10}')
       source[:active_storage_attachments].insert(record_type: type, record_id: id, name: name, blob_id: blob, created_at: now)
     end
+    rich_blob = source[:active_storage_blobs].insert(key: "unneeded-preview", filename: "embedded.png", content_type: "image/png", byte_size: 1024)
+    rich_id = Base64.urlsafe_encode64(JSON.generate(_rails: {data: "gid://campfire/ActiveStorage::Blob/#{rich_blob}"})) + "--old-signature"
+    text = source[:action_text_rich_texts].where(record_id: 777).get(:body)
+    source[:action_text_rich_texts].where(record_id: 777).update(body: text + %( <action-text-attachment sgid="#{rich_id}"></action-text-attachment>))
     source.disconnect
     before = Digest::SHA256.file(source_path).hexdigest
     target_db = Campfire::Database.connect(path: File.join(@directory, "imported.sqlite3"))
@@ -64,9 +69,17 @@ class ImporterTest < CampfireTest
     assert_equal 1, counts[:messages]
     assert_equal before, Digest::SHA256.file(source_path).hexdigest
     imported = target_db[:messages][id: 777]
-    assert_equal "Imported coffee\n @Member", imported[:plain_text]
+    assert_equal "Imported coffee\n @Member embedded.png", imported[:plain_text]
     refute_includes imported[:body], "bad()"
     assert_equal [member.id], target.service.mentioned_user_ids(imported[:body])
+    view = Campfire::UI::View.new(container: target, actor: target.repo.user(member.id), csrf: nil, nonce: nil,
+      request: Rack::Request.new(Rack::MockRequest.env_for("http://example.org/")))
+    target.media.stub(:variant, ->(*) { flunk "Rich-text files must not generate previews" }) do
+      rendered = Campfire::UI::RichText.new(view).render(imported[:body])
+      assert_includes rendered, "embedded.png"
+      assert_includes rendered, "1 KB"
+      refute_includes rendered, "Missing attachment"
+    end
     assert_equal 1, counts[:attachments]
     assert_equal 2, counts[:media]
     assert_equal "avatar.png", target.media.find("User", member.id, "avatar")[:filename]

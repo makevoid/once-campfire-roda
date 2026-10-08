@@ -90,12 +90,16 @@ module Campfire
         request.redirect "/account/edit"
       end
 
+      def visible_account_users
+        db[:users].where(status: @user.administrator? ? [0, 2] : 0).order(Sequel.function(:lower, :name), :id)
+      end
+
       def account_page
         view = ui
-        rows = db[:users].exclude(role: 2).where(status: @user.administrator? ? [0, 2] : 0).order(Sequel.function(:lower, :name)).all
-        page = UI::Pagination.new(rows, request.params["page"], per_page: 500)
-        users = page.records.map { |row| UI::User.new(row, view.context) }
-        administrators, members = users.partition(&:administrator?)
+        rows = visible_account_users
+        administrators = rows.where(role: 1).all.map { |row| UI::User.new(row, view.context) }
+        page = UI::Pagination.new(rows.where(role: 0), request.params["page"], per_page: 500)
+        members = page.records.map { |row| UI::User.new(row, view.context) }
         view.page("accounts/edit", account: view.current.account, administrators: administrators, members: members, page: page)
       end
     end

@@ -2,6 +2,7 @@
 
 module Campfire
   class OpenGraph
+    DEADLINE = 10
     MAX_BYTES = 5 * 1024 * 1024
     IMAGE_TYPES = %w[image/jpeg image/png image/gif image/webp].freeze
     SKIP = /\.(?:zip|tar|gz|bz2|rar|7z|dmg|exe|msi|pkg|deb|iso|jpe?g|png|gif|bmp|mp4|mov|avi|mkv|wmv|flv|heic|heif|mp3|wav|ogg|aac|wma|webm|ogv|mpe?g)(?:\z|[?#])/i
@@ -12,6 +13,15 @@ module Campfire
     end
 
     def from_url(url)
+      # Include DNS, redirects, HTML parsing and the image probe in one budget.
+      Timeout.timeout(DEADLINE) { fetch_metadata(url) }
+    rescue Timeout::Error
+      nil
+    end
+
+    private
+
+    def fetch_metadata(url)
       uri, = public_location(url)
       return if SKIP.match?(uri.to_s)
       if %w[twitter.com www.twitter.com x.com www.x.com].include?(uri.host) && !["", "/"].include?(uri.path)

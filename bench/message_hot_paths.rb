@@ -35,8 +35,8 @@ end
 cookie = -> { cookies.map { |k, v| "#{k}=#{v}" }.join("; ") }
 response = client.get("/session/new")
 merge_cookies.call(response)
-token = CGI.unescapeHTML(response.body[/<meta name="csrf-token" content="([^"]+)"/, 1])
-response = client.post("/session", "HTTP_COOKIE" => cookie.call, params: {
+token = CGI.unescapeHTML(response.body[/<meta name="csrf-token" content="([^"]+)"/, 1].to_s)
+response = client.post("/session", "HTTP_COOKIE" => cookie.call, "HTTP_SEC_FETCH_SITE" => "same-origin", params: {
   email_address: labels.fetch("emails.david"), password: labels.fetch("passwords.all"), authenticity_token: token})
 raise "Login failed: #{response.status}" unless response.status == 302
 merge_cookies.call(response)
@@ -66,7 +66,7 @@ paths.each do |name, path|
     allocations << GC.stat(:total_allocated_objects) - allocated
     queries << counter.count
     raise "#{path}: HTTP #{response.status}" unless response.status == 200
-    # CSRF masks change every render; no other content is removed from the hash.
+    # Keep historical token/nonce normalization; current forms are token-free.
     normalized = response.body.gsub(/(name="(?:csrf-token|authenticity_token)" (?:content|value)=")[^"]+/, '\1[csrf]')
       .gsub(/(nonce=")[^"]+/, '\1[nonce]').gsub(/(name="csp-nonce" content=")[^"]+/, '\1[nonce]')
     hashes << Digest::SHA256.hexdigest(normalized)
@@ -94,7 +94,8 @@ options[:iterations].times do
 end
 results[:unread_fanout_1000] = {milliseconds: times, allocations: allocations, median_ms: times.sort[times.length / 2]}
 output = {ruby: RUBY_DESCRIPTION, roda: Roda::RodaVersion, sequel: Sequel::VERSION, iterations: options[:iterations],
-  cache: "No application response/fragment cache; warm SQLite and Ruby", csrf: "enabled", fixture: labels, results: results}
+  cache: {response_mb: ENV.fetch("CAMPFIRE_RESPONSE_CACHE_MB", "64"), fragment_mb: ENV.fetch("CAMPFIRE_FRAGMENT_CACHE_MB", "64")},
+  query_accounting: "Sequel statements; excludes the separate SQLite cache observer", csrf: "Fetch Metadata and Origin", fixture: labels, results: results}
 FileUtils.mkdir_p(File.dirname(options[:output]))
 File.write(options[:output], JSON.pretty_generate(output) + "\n")
 results.each { |name, result| puts "%s: %.3f ms, %s queries, %s allocations" % [name, result[:median_ms], result[:queries]&.uniq&.join(",") || "—", result[:median_allocations] || result[:allocations].sort[result[:allocations].length / 2]] }

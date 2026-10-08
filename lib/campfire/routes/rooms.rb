@@ -6,11 +6,15 @@ module Campfire
       private
 
       def room_page(around: nil)
-        page = repo.messages(@room.id, around: around)
-        json(api_messages(page)) if wants_json?
-        session["last_room_id"] = @room.id
-        view = ui(page: page)
-        view.page("rooms/show", room: view.context.room(@room.id), messages: view.context.page_messages(page))
+        # Reproduce navigation state on every request, including cache hits.
+        # Some API/load clients deliberately do not retain response cookies.
+        session["last_room_id"] = @room.id unless wants_json?
+        cached_read do
+          page = repo.messages(@room.id, around: around)
+          json(api_messages(page)) if wants_json?
+          view = ui(page: page)
+          view.page("rooms/show", room: view.context.room(@room.id), messages: view.context.page_messages(page))
+        end
       end
 
       def room_management_routes(r, kind)

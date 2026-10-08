@@ -15,7 +15,7 @@ class CampfireTest < Minitest::Test
 
   def setup
     @directory = Dir.mktmpdir("campfire-test-")
-    @db = Campfire::Database.connect(path: ":memory:")
+    @db = Campfire::Database.connect(path: database_path)
     Campfire::Database.migrate(db)
     @container = Campfire::Container.new(db: db, upload_root: File.join(@directory, "files"), push_resolver: ->(*) { ["8.8.8.8"] })
     @service, @repo = container.service, container.repo
@@ -29,7 +29,9 @@ class CampfireTest < Minitest::Test
   end
 
   def app = @app
+  def database_path = ":memory:"
   def teardown
+    container.response_cache.clear
     db.disconnect
     FileUtils.remove_entry(@directory)
   end
@@ -53,9 +55,9 @@ class CampfireTest < Minitest::Test
   end
 
   def mutate(method, path, values = {}, csrf: true)
-    header "X-CSRF-Token", csrf ? @csrf : nil
+    header "Sec-Fetch-Site", csrf ? "same-origin" : "cross-site"
     public_send(method, path, values)
-    header "X-CSRF-Token", nil
+    header "Sec-Fetch-Site", nil
   end
 
   def post_message(user = admin, target = room, text = "Coffee is ready", **extra)

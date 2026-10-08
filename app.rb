@@ -5,7 +5,9 @@ require "roda"
 require "rack/method_override"
 require_relative "lib/campfire"
 require_relative "lib/campfire/request_limit"
+require_relative "lib/campfire/fetch_metadata"
 require_relative "lib/campfire/routes/support"
+require_relative "lib/campfire/routes/cached_reads"
 require_relative "lib/campfire/routes/messages"
 require_relative "lib/campfire/routes/rooms"
 require_relative "lib/campfire/routes/users"
@@ -15,6 +17,8 @@ require_relative "lib/campfire/routes/frontend"
 
 module Campfire
   class App < Roda
+    include Routes::CachedReads
+    include FetchMetadata
     include Routes::Support
     include Routes::Messages
     include Routes::Rooms
@@ -36,10 +40,6 @@ module Campfire
     plugin :public, root: File.expand_path("public", __dir__)
     plugin :sessions, secret: SECRET, key: "session_token", max_seconds: Authentication::SESSION_TTL,
       cookie_options: {same_site: :lax, httponly: true, secure: ENV["RACK_ENV"] == "production" && ENV["DISABLE_SSL"] != "true"}
-    # General tokens support the Rails benchmark client and JavaScript mutations.
-    # Tokens are tied to an encrypted session and rotated at authentication.
-    plugin :route_csrf, field: "authenticity_token", require_request_specific_tokens: false,
-      check_header: true, csrf_failure: :empty_403, exempt_request_methods: %w[GET HEAD OPTIONS]
     plugin :error_handler do |error|
       case error
       when Error
@@ -67,10 +67,10 @@ module Campfire
       response["x-content-type-options"] = "nosniff"
       response["referrer-policy"] = "same-origin"
       response["x-frame-options"] = "DENY"
-      @nonce = SecureRandom.base64(18)
-      response["content-security-policy"] = "default-src 'self'; script-src 'self' 'nonce-#{@nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+      response["content-security-policy"] = "default-src 'self'; script-src 'self' #{UI::Assets::SCRIPT_HASHES}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
       response["cache-control"] = "private, no-store"
-      r.get("up") { "OK" }
+      @response_cache_version = container.response_cache.version if r.get? && r.path.match?(%r{\A(?:/rooms/\d+(?:/@\d+|/messages)?|/users/me/sidebar|/searches)\z})
+      r.get("up") { '<!DOCTYPE html><html><body style="background-color: green"></body></html>' }
       r.get("service-worker") { send_local_file(File.expand_path("public/service-worker.js", __dir__), "text/javascript", cache: "no-cache") }
       r.public if r.path == "/service-worker.js" || r.path.start_with?("/assets/")
       if !r.get? && !r.head?
@@ -88,7 +88,7 @@ module Campfire
         r.on("messages") { message_routes(r) }
       end
 
-      check_csrf!
+      check_browser_write!
       r.get("account", "logo") { logo }
       r.get("qr_code", String) { |value| qr_code(value) }
       r.on "first_run" do
@@ -137,12 +137,12 @@ module Campfire
       end
 
       r.get("webmanifest") { webmanifest }
-      @user = auth.resume(session["token"])
+      @user = auth.resume(session["token"], cache: container.response_cache, version: @response_cache_version)
       r.get "cable" do
         raise Error.new("Sign in required", 401) unless @user
         raise Error.new("Invalid WebSocket origin", 403) unless r.env["HTTP_ORIGIN"] == r.base_url
         raise Error.new("WebSocket upgrade required", 426) unless WebSocket::Driver.websocket?(r.env) && r.env["rack.hijack"]
-        Realtime::Socket.new(container, r, session["token"], csrf_token)
+        Realtime::Socket.new(container, r, session["token"], nil)
         r.halt [-1, {}, []]
       end
       unless @user
@@ -163,7 +163,7 @@ module Campfire
         end
         r.on(/(opens|closeds|directs)/) { |kind| room_management_routes(r, kind) }
         r.on Integer do |id|
-          @room = repo.room(@user, id)
+          @room = repo.room(@user, id, cache: container.response_cache, version: @response_cache_version)
           r.get(true) { room_page } if r.remaining_path.empty?
           r.delete(true) { service.delete_room(@user, id); r.redirect "/" } if r.remaining_path.empty?
           r.get(/@(\d+)/) { |message_id| room_page(around: message_id) }
@@ -211,13 +211,15 @@ module Campfire
 
       r.on "searches" do
         r.get(true) do
-          query = r.params["q"].to_s[0, 500]
-          page = repo.search(@user, query)
-          json(api_messages(page)) if wants_json?
-          view = ui(page: page)
-          view.page("searches/index", query: query.empty? ? nil : query.gsub(/[^[:word:]]/, " "), messages: view.context.page_messages(page),
-            recent_searches: db[:searches].where(user_id: @user.id).reverse_order(:updated_at).limit(10).all.map { |row| UI::Record.new(row) },
-            return_to_room: view.last_room_visited)
+          cached_read do
+            query = r.params["q"].to_s[0, 500]
+            page = repo.search(@user, query)
+            json(api_messages(page)) if wants_json?
+            view = ui(page: page)
+            view.page("searches/index", query: query.empty? ? nil : query.gsub(/[^[:word:]]/, " "), messages: view.context.page_messages(page),
+              recent_searches: db[:searches].where(user_id: @user.id).reverse_order(:updated_at).limit(10).all.map { |row| UI::Record.new(row) },
+              return_to_room: view.last_room_visited)
+          end
         end
         r.post(true) do
           service.record_search(@user, r.params["q"])
